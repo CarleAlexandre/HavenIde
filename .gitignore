@@ -1,0 +1,14 @@
+*.o
+*.out
+*.elf
+*.png
+*.txt
+*.exe
+*.d
+
+build/*
+.cache/*
+.vs
+
+assets/*
+remedybg.exe

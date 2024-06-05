@@ -1,0 +1,3 @@
+[submodule "HavenLib"]
+	path = HavenLib
+	url = git@github.com:CarleAlexandre/HavenLib.git
