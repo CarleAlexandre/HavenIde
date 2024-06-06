@@ -2,14 +2,9 @@
 # include <stdint.h>
 # include <stdbool.h>
 # include <sstream>
-
-typedef struct s_file_header{
-	size_t size;
-	std::stringstream buffer;
-	char *extension;
-	char *name;
-	char *path;
-}t_file_header;
+# include <raylib.h>
+# include <unordered_map>
+# include <linked_list.h>
 
 typedef struct s_monitor {
 	int refresh_rate, height, width, id;
@@ -33,3 +28,25 @@ typedef enum {
 	visual = 2,
 	visual_block = 3,
 } vi_mod;
+
+typedef struct s_node_file {
+	FilePathList files;
+	const char *path;
+	int depth;
+	bool isDirectory = false;
+	std::unordered_map<const char *, s_node_file> child;
+} t_node_file;
+
+typedef struct s_glyph {
+	char c;
+	Vector2 pos;
+} t_glyph;
+
+typedef struct s_file_header{
+	size_t size;
+	Vector2 dim;
+	t_node **list;
+	char *extension;
+	char *name;
+	char *path;
+}t_file_header;

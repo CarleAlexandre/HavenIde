@@ -8,12 +8,89 @@
 # include <stdio.h>
 # include <haven_logic.h>
 # include <fstream>
+# include <haven_file.hpp>
+# include <iostream>
 
 struct context {
 	int cursor_pos;
 	int font_size;
 	t_file_header file;
 } ctx;
+
+Vector2 FileToGlyph(t_node **list, const char *filepath) {
+	Vector2 pos = {0};
+	Vector2 dim;
+
+	char *data = readFile(filepath);
+
+	for(int i = 0; data[i]; i++) {
+		t_glyph *glyph = 0x00;
+		glyph = (t_glyph *)malloc(sizeof(t_glyph));
+		if (!glyph) {
+			perror("couldn't allocat memory");
+			abort();
+		}
+		glyph->c = data[i];
+		glyph->pos = pos;
+		if (data[i] == '\n') {
+			pos.y++;
+			pos.x = 0;
+		} else {
+			pos.x++;
+		}
+		if (dim.x < pos.x) {
+			dim.x = pos.x;
+		}
+		if (dim.y < pos.y) {
+			dim.y = pos.y;
+		}
+		addNodeBack(list, createNode(glyph));
+	}
+	free(data);
+	return (dim);
+};
+
+t_node_file loadWorkspace(void){
+	FilePathList workspace_files;
+	workspace_files = LoadDirectoryFilesEx(GetWorkingDirectory(), NULL, true);
+	int depth = 1;
+	t_node_file root;
+
+	root.files = LoadDirectoryFiles(GetWorkingDirectory());
+	root.depth = 0;
+	root.path = GetWorkingDirectory();
+
+	t_node_file *current_node;
+	current_node = &root;
+	for (int i = 0; i < current_node->files.count; i++) {
+		t_node_file child;
+		child.path = current_node->files.paths[i];
+		child.files = LoadDirectoryFiles(child.path);
+		child.depth = depth;
+		if (DirectoryExists(current_node->files.paths[i])) {
+			child.isDirectory = true;
+		} else {
+			child.isDirectory = false;
+		}
+		current_node->child.insert( {child.path, child});
+	}
+	for (int y = 0; y < root.files.count; y++) {
+		current_node = &root.child[root.files.paths[y]];
+		for (int i = 0; i < current_node->files.count; i++) {
+			t_node_file child;
+			child.path = current_node->files.paths[i];
+			child.files = LoadDirectoryFiles(child.path);
+			child.depth = depth;
+			if (DirectoryExists(current_node->files.paths[i])) {
+				child.isDirectory = true;
+			} else {
+				child.isDirectory = false;
+			}
+			current_node->child.insert( {child.path, child});
+		}
+	}
+	return (root);
+}
 
 void ControlBar() {
 	static int status_bar_show = 0;
@@ -53,33 +130,38 @@ void ControlBar() {
 	}
 }
 
-void TextEditor(t_file_header *file, const Rectangle bound) {
+void TextEditor(const Rectangle bound) {
 	static int cursor_pos = 0;
 	static Vector2 scroll = {};
 	static Rectangle view = {};
-	int counter = 0;
+	int i = 0;
 
 	//if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
 	//	cursor_pos = GetMousePosition();
 	//}
-
-	for (int i = 0; i < ctx.file.buffer.str().size(); i++) {
-		if (ctx.file.buffer.str()[i] == '\n') {
-			counter++;
-		}
-	}
 	//if \n then draw number of line after
 	//count number of line
 	// get cursor with row/ column idx and if no text exit, then go to last
 
 
 	//GuiScrollPanel(bound, file->name, (Rectangle){0, 0, 100, 100}, &scroll, &view);
-	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, 1000, 10000}, &scroll, &view);
+	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)(30 + (ctx.file.dim.y + 2) * ctx.font_size * 1.5)}, &scroll, &view);
 	BeginScissorMode(view.x, view. y, view. width, view. height);
-		for (int i = 0; i <= counter; i++) {
-			DrawText(TextFormat(" %5i ", i + 1), bound.x, bound.y + 20 + ctx.font_size * i * 1.5 + scroll.y, ctx.font_size, WHITE);
+	t_node *tmp = *ctx.file.list;
+	DrawText(TextFormat(" %5i ", i + 1), bound.x, bound.y + 30 + ctx.font_size * i * 1.5 + scroll.y, ctx.	font_size, WHITE);
+	while (((t_glyph*)tmp->data)->c && tmp->next) {
+		if (((t_glyph*)tmp->data)->c == '\n') {
+			i++;
 		}
-		DrawText(ctx.file.buffer.str().c_str(), 40 + bound.x + scroll.x, bound.y + 20 + scroll.y, ctx.font_size, BLUE);
+		char character[2] = {((t_glyph*)tmp->data)->c, '\0'};
+		DrawText(character, 40 + bound.x + scroll.x + ((t_glyph*)tmp->data)->pos.x * ctx.font_size, bound.y + 30 + scroll.y + ((t_glyph*)tmp->data)->pos.y * (ctx.font_size * 1.5), ctx.font_size, BLUE);
+		tmp = tmp->next;
+	}
+	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
+	for (int k = 0; k <= i; k++) {
+		DrawText(TextFormat(" %5i ", k + 1), bound.x, bound.y + 30 + ctx.font_size * k * 1.5 + scroll.y, ctx.	font_size, WHITE);
+	}
+	DrawText(TextFormat(" %5i ", i + 2), bound.x, bound.y + 30 + ctx.font_size * (i + 1) * 1.5 + scroll.y, ctx.	font_size, WHITE);
 	EndScissorMode();
 }
 
@@ -115,19 +197,37 @@ void Performance(const Rectangle bound) {
 }
 
 
-void FileExplorer(FilePathList *workspace_files, const Rectangle bound) {	
+void FileExplorer(t_node_file *workspace_files, const Rectangle bound) {	
 	static Vector2 scroll;
 	static Rectangle view;
 
-	GuiScrollPanel(bound, "Workspace", (Rectangle){0, 0, 180, (float)50 + workspace_files->count * 20}, &scroll, &view);
+	int max_size;
+	for (int i = 0; i < workspace_files->files.count;i++ && max_size++) {
+		max_size += workspace_files->child[workspace_files->files.paths[i]].files.count;
+	}
+
+	GuiScrollPanel(bound, "Workspace", (Rectangle){0, 0, 180, (float)50 + workspace_files->files.count + max_size * 20}, &scroll, &view);
 	BeginScissorMode(view.x, view.y, view.width, view.height);
-		for (int i = 0; i < workspace_files->count; i++) {
-			DrawText(GetFileName(workspace_files->paths[i]), 20 + scroll.x, 50 + 20 * i + scroll.y, ctx.font_size, WHITE);
+		for (int i = 0; i < workspace_files->files.count; i++) {
+			if (workspace_files->child[workspace_files->files.paths[i]].isDirectory) {
+				DrawText(GetFileName(workspace_files->child[workspace_files->files.paths[i]].path), 20 + scroll.x, 50 + 20 * i * workspace_files->child[workspace_files->files.paths[i]].files.count + scroll.y, ctx.font_size, RAYWHITE);
+			} else {
+				DrawText(GetFileName(workspace_files->child[workspace_files->files.paths[i]].path), 20 + scroll.x, 50 + 20 * i * workspace_files->child[workspace_files->files.paths[i]].files.count + scroll.y, ctx.font_size, WHITE);
+			}
+			t_node_file *node;
+			node = &workspace_files->child[workspace_files->files.paths[i]];
+			for (int k = 0; k < node->files.count; k++) {
+				if (node->child[node->files.paths[k]].isDirectory) {
+					DrawText(GetFileName(node->child[node->files.paths[k]].path), 40 + scroll.x, 50 + 20 * i + k + scroll.y, ctx.font_size, RAYWHITE);
+				} else {
+					DrawText(GetFileName(node->child[node->files.paths[k]].path), 40 + scroll.x, 50 + 20 * i + k + scroll.y, ctx.font_size, WHITE);
+				}
+			}
 		}
 	EndScissorMode();
 }
 
-int View(FilePathList *workspace_files){
+int View(t_node_file *workspace_files){
 	static float sep1 = 160;
 	static float sep2 = 300;
 	static float sep3 = 300;
@@ -149,8 +249,8 @@ int View(FilePathList *workspace_files){
 
 	BeginDrawing();
 	ClearBackground(BLACK);
-		FileExplorer(workspace_files, (Rectangle){0, 20, sep1, sep2});
-		TextEditor(NULL, (Rectangle){sep1, 20, width - sep1 - sep4, sep2});
+		FileExplorer(workspace_files, (Rectangle){0, 20, sep1, sep2 - 20});
+		TextEditor((Rectangle){sep1, 20, width - sep1 - sep4, sep2 - 20});
 		LanguageServer((Rectangle){0, sep2, sep3, height - sep2});
 		StackViewer((Rectangle){sep3, sep2, width - sep3 - sep4, height - sep2});
 		Performance((Rectangle){width - sep4, 20, width - sep4, height - 20});
@@ -163,7 +263,7 @@ int main(void) {
 	//t_file_header openfile;
 	int monitor_count = 0;
 	int step = 0;
-	FilePathList workspace_files;
+	t_node_file workspace;
 	ctx.font_size = 8;
 
 	InitWindow(200, 200, "HavenIde");
@@ -182,7 +282,6 @@ int main(void) {
 		displays[i].id = i;
 		printf("refresh rate: %i, width: %i, height: %i, id: %i\n", displays[i].refresh_rate, displays[i].width, displays[i].height, i);
 	}
-	workspace_files = LoadDirectoryFiles(GetWorkingDirectory());
 
 	GuiLoadStyle(TextFormat("%s/../include/styles/terminal/style_terminal.rgs", GetApplicationDirectory()));
 
@@ -193,10 +292,12 @@ int main(void) {
 		abort();
 	}
 
-	ctx.file.buffer << file.rdbuf();
-	file.close();
-	ctx.file.size = ctx.file.buffer.str().size();
-	printf("%s\n", ctx.file.buffer.str().c_str());
+	ctx.file.list = (t_node **)malloc(sizeof(t_node *));
+	*ctx.file.list = 0x00;
+	std::cout << ctx.file.list << "; " << ctx.file.list << ";\n";
+	ctx.file.dim = FileToGlyph(ctx.file.list, "Makefile");
+
+	workspace = loadWorkspace();
 
 	SetTargetFPS(30);
 	EnableEventWaiting();
@@ -226,13 +327,12 @@ int main(void) {
 				break;
 			}
 			case (stdview): {
-				step = View(&workspace_files);
+				step = View(&workspace);
 				break;
 			}
 			default:break;
 		}
 	}
-	UnloadDirectoryFiles(workspace_files);
 	CloseWindow();
 	return (0);
 }
