@@ -31,7 +31,7 @@ Vector2 FileToGlyph(t_node **list, const char *filepath) {
 			abort();
 		}
 		glyph->c = data[i];
-		glyph->pos = pos;
+		glyph->fg = WHITE;
 		if (data[i] == '\n') {
 			pos.y++;
 			pos.x = 0;
@@ -49,6 +49,26 @@ Vector2 FileToGlyph(t_node **list, const char *filepath) {
 	free(data);
 	return (dim);
 };
+
+t_glyph *createGlyph(const char c) {
+	t_glyph *glyph;
+
+	glyph = (t_glyph *)malloc(sizeof(t_glyph));
+	glyph->c = c;
+	glyph->fg = WHITE;
+	return (glyph);
+}
+
+char getGlyphC(t_node **list, int idx) {
+	t_node *span = *list;
+
+	for (int i = 0;span->next; i++) {
+		if (idx == i) {
+			return(((t_glyph*)span->data)->c);
+		}
+		span = span->next;
+	}
+}
 
 t_node_file loadWorkspace(void){
 	FilePathList workspace_files;
@@ -130,109 +150,97 @@ void ControlBar() {
 	}
 }
 
-int getNearestGlyph(Vector2 pos) {
-	int nearest = 0;
-	t_node *span = *ctx.file.list;
-	float dist = Vector2Distance(((t_glyph *)span->data)->pos, pos);
-	span = span->next;
-
-	for (int i = 0; i < ctx.file.size; i++) {
-		if (Vector2Distance(((t_glyph *)span->data)->pos, pos) < dist) {
-			dist = Vector2Distance(((t_glyph *)span->data)->pos, pos);
-			nearest = i;
-		}
-		span = span->next;
-	}
-	return (nearest);
-}
-
-Vector2 getNearestGlyphPos(Vector2 pos) {
-	t_node *span = *ctx.file.list;
-	Vector2 nearest = ((t_glyph *)span->data)->pos;
-	float dist = Vector2Distance(((t_glyph *)span->data)->pos, pos);
-	span = span->next;
-
-	while (span->next) {
-		if (Vector2Distance(((t_glyph *)span->data)->pos, pos) < dist) {
-			dist = Vector2Distance(((t_glyph *)span->data)->pos, pos);
-			nearest = ((t_glyph *)span->data)->pos;
-		}
-		span = span->next;
-	}
-	return (nearest);
-}
-
 void TextEditor(const Rectangle bound) {
-	static int cursor_pos = 0;
+	static int cursor = 0;
 	static Vector2 scroll = {};
 	static Rectangle view = {};
-	static Vector2 cursor = {};
-	static double time = 0;
-
-	time += GetFrameTime();
+	Vector2 cursor_pos;
 	int i = 0;
 
 	bool update_cursor = false;
 
 	if (IsKeyDown(KEY_LEFT)) {
-		cursor.x --;
+		cursor --;
 		update_cursor = true;
 	}
 	if (IsKeyDown(KEY_RIGHT)) {
-		cursor.x ++;
+		cursor ++;
 		update_cursor = true;
 	}
-	if (IsKeyDown(KEY_DOWN)) {
-		cursor.y++;
-		cursor.x = 0;
-		update_cursor = true;
+	if (IsKeyDown(KEY_BACKSPACE) && cursor) {
+		if (getGlyphC(ctx.file.list, cursor - 1) == '\n') {
+			ctx.file.dim.y--;
+		}
+		eraseNode(cursor - 1, ctx.file.list);
+		cursor--;
+		ctx.file.size--;
 	}
-	if (IsKeyDown(KEY_UP)) {
-		cursor.y --;
-		cursor.x = 0;
-		update_cursor = true;
+	if (IsKeyDown(KEY_ENTER)) {
+		if (!cursor) {
+			addNodeFront(ctx.file.list, createNode(createGlyph('\n')));
+		} else {
+			insertNode(cursor - 1, ctx.file.list, createNode(createGlyph('\n')));
+		}
+		cursor++;
+		ctx.file.size++;
+		ctx.file.dim.y++;
+	}
+	if (IsKeyDown(KEY_TAB)) {
+		if (!cursor) {
+			addNodeFront(ctx.file.list, createNode(createGlyph('\t')));
+		} else {
+			insertNode(cursor - 1, ctx.file.list, createNode(createGlyph('\t')));
+		}
+		cursor++;
+		ctx.file.size++;
 	}
 
-	if (update_cursor) {
-		cursor = Vector2Clamp(cursor, {0, 0},{ctx.file.dim.x, ctx.file.dim.y});
-		cursor = getNearestGlyphPos(cursor);
-		std::cout << "x: " << cursor.x << ", y: " << cursor.y << "\n";
+	if (update_cursor && cursor < 0) cursor = 0;
+	
+	int key = GetCharPressed();
+	while (key) {
+		if ((key >= 32) && (key <= 125)) {
+			if (!cursor) {
+				addNodeFront(ctx.file.list, createNode(createGlyph((char)key)));
+			} else {
+				insertNode(cursor - 1, ctx.file.list, createNode(createGlyph((char)key)));
+			}
+			cursor++;
+			ctx.file.size++;
+		}
+
+		key = GetCharPressed();
 	}
 
-
-	//if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-	//	cursor = GetMousePosition();
-	//}
-	//if \n then draw number of line after
-	//count number of line
-	// get cursor with row/ column idx and if no text exit, then go to last
-
-	//GuiScrollPanel(bound, file->name, (Rectangle){0, 0, 100, 100}, &scroll, &view);
+	Vector2 pos = {0};
 	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)(30 + (ctx.file.dim.y + 2) * ctx.font_size * 1.5)}, &scroll, &view);
 	BeginScissorMode(view.x, view. y, view. width, view. height);
 	t_node *tmp = *ctx.file.list;
 	DrawText(TextFormat(" %5i ", i + 1), bound.x, i + scroll.y, ctx.font_size, WHITE);
-	while (((t_glyph*)tmp->data)->c && tmp->next) {
+	for (int d = 0;((t_glyph*)tmp->data)->c && tmp->next; d++) {
+		char character[2] = {((t_glyph*)tmp->data)->c, '\0'};
+		DrawText(character, 40 + bound.x + scroll.x + pos.x * ctx.font_size, bound.y + 30 + scroll.y + pos.y * ctx.font_size, ctx.font_size, BLUE);
+		if (d == cursor) {
+			cursor_pos = pos;
+		}
+		pos.x++;
+		if (pos.x > ctx.file.dim.x) {
+			ctx.file.dim.x = pos.x;
+		}
 		if (((t_glyph*)tmp->data)->c == '\n') {
 			i++;
+			pos.y++;
+			pos.x = 0;
 		}
-		char character[2] = {((t_glyph*)tmp->data)->c, '\0'};
-		DrawText(character, 40 + bound.x + scroll.x + ((t_glyph*)tmp->data)->pos.x * ctx.font_size, bound.y + 30 + scroll.y + ((t_glyph*)tmp->data)->pos.y * ctx.font_size, ctx.font_size, BLUE);
 		tmp = tmp->next;
 	}
+	
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
 	for (int k = 0; k <= i; k++) {
 		DrawText(TextFormat(" %5i ", k + 1), bound.x, bound.y + 30 + ctx.font_size * k + scroll.y, ctx.font_size, WHITE);
 	}
 	DrawText(TextFormat(" %5i ", i + 2), bound.x, bound.y + 30 + ctx.font_size * (i + 1) + scroll.y, ctx.font_size, WHITE);
-	static bool show_cursor = false;
-	if (time >= 0.5f) {
-		show_cursor = !show_cursor;
-		time = 0;
-	}
-	if (show_cursor) {
-		DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * ctx.font_size, bound.y + 30 + scroll.y + cursor.y * ctx.font_size + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
-	}
+	DrawRectangleLines(40 + bound.x + scroll.x + cursor_pos.x * ctx.font_size, bound.y + 30 + scroll.y + cursor_pos.y * ctx.font_size + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
 	EndScissorMode();
 }
 

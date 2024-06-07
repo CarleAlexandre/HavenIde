@@ -39,7 +39,8 @@ typedef struct s_node_file {
 
 typedef struct s_glyph {
 	char c;
-	Vector2 pos;
+	Color fg;
+	Color bg;
 } t_glyph;
 
 typedef struct s_file_header{
