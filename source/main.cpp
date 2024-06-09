@@ -7,9 +7,7 @@
 # include <stdlib.h>
 # include <stdio.h>
 # include <haven_logic.h>
-# include <fstream>
 # include <haven_file.hpp>
-# include <iostream>
 
 struct context {
 	int cursor_pos;
@@ -23,6 +21,7 @@ Vector2 FileToGlyph(t_node **list, const char *filepath) {
 
 	char *data = readFile(filepath);
 
+	t_node *span = 0x00;
 	for(int i = 0; data[i]; i++) {
 		t_glyph *glyph = 0x00;
 		glyph = (t_glyph *)malloc(sizeof(t_glyph));
@@ -44,7 +43,15 @@ Vector2 FileToGlyph(t_node **list, const char *filepath) {
 		if (dim.y < pos.y) {
 			dim.y = pos.y;
 		}
-		addNodeBack(list, createNode(glyph));
+		if (!span) {
+			*list = createNode(glyph);
+			span = *list;
+		} else {
+			span->next = createNode(glyph);
+			span->next->prev = span;
+			span = span->next;
+		}
+		//addNodeBack(list, createNode(glyph));
 	}
 	free(data);
 	return (dim);
@@ -155,31 +162,50 @@ void TextEditor(const Rectangle bound) {
 	static Vector2 scroll = {};
 	static Rectangle view = {};
 	Vector2 cursor_pos;
+	static t_node *current_glyph = *ctx.file.list;
+	static int start_line;
 	int i = 0;
 
 	bool update_cursor = false;
+	bool update_scroll = false;
 
 	if (IsKeyDown(KEY_LEFT)) {
-		cursor --;
-		update_cursor = true;
+		if (current_glyph->prev) {
+			cursor --;
+			update_cursor = true;
+			current_glyph = current_glyph->prev;
+		}
 	}
 	if (IsKeyDown(KEY_RIGHT)) {
-		cursor ++;
-		update_cursor = true;
+		if (current_glyph->next) {
+			current_glyph = current_glyph->next;
+			cursor ++;
+			update_cursor = true;
+		}
 	}
 	if (IsKeyDown(KEY_BACKSPACE) && cursor) {
 		if (getGlyphC(ctx.file.list, cursor - 1) == '\n') {
 			ctx.file.dim.y--;
 		}
 		eraseNode(cursor - 1, ctx.file.list);
+		if (current_glyph->prev) 
+			current_glyph = current_glyph->prev;
 		cursor--;
 		ctx.file.size--;
 	}
 	if (IsKeyDown(KEY_ENTER)) {
 		if (!cursor) {
 			addNodeFront(ctx.file.list, createNode(createGlyph('\n')));
+			if (current_glyph->next) 
+				current_glyph = current_glyph->next;
 		} else {
-			insertNode(cursor - 1, ctx.file.list, createNode(createGlyph('\n')));
+			t_node *new_node = createNode(createGlyph('\n'));
+			new_node->next = current_glyph->next;
+			new_node->prev = current_glyph;
+			current_glyph->next = new_node;
+			new_node->next->prev = new_node;
+			if (current_glyph->next) 
+				current_glyph = current_glyph->next;
 		}
 		cursor++;
 		ctx.file.size++;
@@ -188,8 +214,16 @@ void TextEditor(const Rectangle bound) {
 	if (IsKeyDown(KEY_TAB)) {
 		if (!cursor) {
 			addNodeFront(ctx.file.list, createNode(createGlyph('\t')));
+			if (current_glyph->next) 
+				current_glyph = current_glyph->next;
 		} else {
-			insertNode(cursor - 1, ctx.file.list, createNode(createGlyph('\t')));
+			t_node *new_node = createNode(createGlyph('\t'));
+			new_node->next = current_glyph->next;
+			new_node->prev = current_glyph;
+			current_glyph->next = new_node;
+			new_node->next->prev = new_node;
+			if (current_glyph->next) 
+				current_glyph = current_glyph->next;
 		}
 		cursor++;
 		ctx.file.size++;
@@ -203,7 +237,13 @@ void TextEditor(const Rectangle bound) {
 			if (!cursor) {
 				addNodeFront(ctx.file.list, createNode(createGlyph((char)key)));
 			} else {
-				insertNode(cursor - 1, ctx.file.list, createNode(createGlyph((char)key)));
+				t_node *new_node = createNode(createGlyph((char)key));
+				new_node->next = current_glyph->next;
+				new_node->prev = current_glyph;
+				current_glyph->next = new_node;
+				new_node->next->prev = new_node;
+				if (current_glyph->next) 
+					current_glyph = current_glyph->next;
 			}
 			cursor++;
 			ctx.file.size++;
@@ -212,12 +252,26 @@ void TextEditor(const Rectangle bound) {
 		key = GetCharPressed();
 	}
 
+
 	Vector2 pos = {0};
 	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)(30 + (ctx.file.dim.y + 2) * ctx.font_size * 1.5)}, &scroll, &view);
+
+
+	pos.y -= scroll.y / (ctx.font_size * 1.5);
+	int max_pos = (30 + pos.y) * ctx.font_size;
+
 	BeginScissorMode(view.x, view. y, view. width, view. height);
+
 	t_node *tmp = *ctx.file.list;
+	for (int i = 0; i < pos.y && tmp->next;) {
+		if (((t_glyph *)tmp->data)->c == '\n') {
+			i++;
+		}
+		tmp = tmp->next;
+	}
+
 	DrawText(TextFormat(" %5i ", i + 1), bound.x, i + scroll.y, ctx.font_size, WHITE);
-	for (int d = 0;((t_glyph*)tmp->data)->c && tmp->next; d++) {
+	for (int d = 0;((t_glyph*)tmp->data)->c && tmp->next && pos.y < max_pos; d++) {
 		char character[2] = {((t_glyph*)tmp->data)->c, '\0'};
 		DrawText(character, 40 + bound.x + scroll.x + pos.x * ctx.font_size, bound.y + 30 + scroll.y + pos.y * ctx.font_size, ctx.font_size, BLUE);
 		if (d == cursor) {
@@ -234,7 +288,7 @@ void TextEditor(const Rectangle bound) {
 		}
 		tmp = tmp->next;
 	}
-	
+
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
 	for (int k = 0; k <= i; k++) {
 		DrawText(TextFormat(" %5i ", k + 1), bound.x, bound.y + 30 + ctx.font_size * k + scroll.y, ctx.font_size, WHITE);
@@ -329,7 +383,9 @@ int View(t_node_file *workspace_files){
 	BeginDrawing();
 	ClearBackground(BLACK);
 		FileExplorer(workspace_files, (Rectangle){0, 20, sep1, sep2 - 20});
+	
 		TextEditor((Rectangle){sep1, 20, width - sep1 - sep4, sep2 - 20});
+	
 		LanguageServer((Rectangle){0, sep2, sep3, height - sep2});
 		StackViewer((Rectangle){sep3, sep2, width - sep3 - sep4, height - sep2});
 		Performance((Rectangle){width - sep4, 20, width - sep4, height - 20});
@@ -364,17 +420,14 @@ int main(void) {
 
 	GuiLoadStyle(TextFormat("%s/../include/styles/terminal/style_terminal.rgs", GetApplicationDirectory()));
 
-	std::fstream file("Makefile");
-
-	if (!file.is_open()) {
-		perror("could not load file");
+	ctx.file.list = (t_node **)malloc(sizeof(t_node *));
+	if (!ctx.file.list) {
+		perror("Couldn't allocate memory");
 		abort();
 	}
-
-	ctx.file.list = (t_node **)malloc(sizeof(t_node *));
 	*ctx.file.list = 0x00;
-	std::cout << ctx.file.list << "; " << ctx.file.list << ";\n";
-	ctx.file.dim = FileToGlyph(ctx.file.list, "Makefile");
+	ctx.file.dim = FileToGlyph(ctx.file.list, "ylt.txt");
+	printf("data size: %llu", ctx.file.size);
 
 	workspace = loadWorkspace();
 
