@@ -49,7 +49,5 @@ typedef struct s_file_header{
 	size_t size;
 	Vector2 dim;
 	std::vector<std::list<t_glyph*>> glyphs;
-	char *extension;
-	char *name;
-	char *path;
+	std::string name;
 }t_file_header;

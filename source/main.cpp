@@ -146,17 +146,37 @@ void ControlBar() {
 	}
 }
 
+void saveTheFile(t_file_header file) {
+	std::string stream;
+
+	for (int y = 0; y < file.dim.y; y++) {
+		auto &span = file.glyphs[y];
+		for (auto it : span) {
+			stream += it->c;
+		}
+		stream += '\n';
+	}
+	writeFile(ctx.file.name.c_str(), stream.c_str(), stream.size());
+	stream.clear();
+}
+
 void TextEditor(const Rectangle bound) {
 	static Vector2 scroll = {};
 	static Rectangle view = {};
 	static Vector2 cursor = {};
 	static int start_line = 0;
+	static bool is_saved = true;
+
+	if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyDown(KEY_S) && !is_saved) {
+		saveTheFile(ctx.file);
+		is_saved = true;
+	}
 
 	if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
 		Vector2 mouse_pos = GetMousePosition();
-		cursor.x = floor((mouse_pos.x - 40 - bound.x - scroll.x) / ctx.font_size);
-		cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / ctx.font_size);
-		cursor.y = clamp(cursor.y, 0, ctx.file.dim.y);
+		cursor.x = floor((mouse_pos.x - 40 - bound.x - scroll.x) / (ctx.font_size));
+		cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (ctx.font_size * 1.5));
+		cursor.y = clamp(cursor.y, 0, ctx.file.dim.y - 1);
 		cursor.x = clamp(cursor.x, 0, ctx.file.glyphs[cursor.y].size());
 	}
 	if (IsKeyDown(KEY_LEFT)) {
@@ -170,7 +190,7 @@ void TextEditor(const Rectangle bound) {
 	if (IsKeyDown(KEY_RIGHT)) {
 		if (cursor.x < ctx.file.glyphs[cursor.y].size()) {
 			cursor.x++;
-		} else if (cursor.y < ctx.file.dim.y) {
+		} else if (cursor.y < ctx.file.dim.y - 1) {
 			cursor.y++;
 			cursor.x = 0;
 		}
@@ -178,7 +198,7 @@ void TextEditor(const Rectangle bound) {
 	if (IsKeyDown(KEY_UP) && cursor.y > 0) {
 		cursor.y--;
 	}
-	if (IsKeyDown(KEY_DOWN) && cursor.y < ctx.file.dim.y) {
+	if (IsKeyDown(KEY_DOWN) && cursor.y < ctx.file.dim.y - 1) {
 		cursor.y++;
 	}
 
@@ -190,17 +210,23 @@ void TextEditor(const Rectangle bound) {
 			cursor.x--;
 			insert_place = ctx.file.glyphs[cursor.y].erase(--insert_place);
 			ctx.file.size--;
+			if (is_saved)
+				is_saved = false;
 		} else if (cursor.y >= 1 && ctx.file.glyphs[cursor.y - 1].empty()) {
 			ctx.file.glyphs.erase(ctx.file.glyphs.begin() + cursor.y - 1);
 			ctx.file.dim.y--;
 			cursor.y--;
 			cursor.x = 0;
+			if (is_saved)
+				is_saved = false;
 		} else if (cursor.y >= 1) {
 			ctx.file.dim.y--;
 			cursor.x = ctx.file.glyphs[cursor.y - 1].size();
 			cursor.y--;
 			ctx.file.glyphs[cursor.y].splice(ctx.file.glyphs[cursor.y].end(), ctx.file.glyphs[cursor.y + 1]);
 			ctx.file.glyphs.erase(ctx.file.glyphs.begin() + cursor.y + 1);
+			if (is_saved)
+				is_saved = false;
 		}
 	}
 	if (IsKeyDown(KEY_ENTER)) {
@@ -212,11 +238,15 @@ void TextEditor(const Rectangle bound) {
 		ctx.file.size++;
 		ctx.file.dim.y++;
 		insert_place = ctx.file.glyphs[cursor.y].begin();
+		if (is_saved)
+			is_saved = false;
 	}
 	if (IsKeyDown(KEY_TAB)) {
 		ctx.file.glyphs[cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
 		cursor.x++;
 		ctx.file.size++;
+		if (is_saved)
+			is_saved = false;
 	}
 	
 	int key = GetCharPressed();
@@ -225,31 +255,38 @@ void TextEditor(const Rectangle bound) {
 			ctx.file.glyphs[cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
 			cursor.x++;
 			ctx.file.size++;
+			if (is_saved)
+				is_saved = false;
 		}
 		key = GetCharPressed();
 	}
 
-	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)30+(ctx.file.dim.y * ctx.font_size)}, &scroll, &view);
+	GuiScrollPanel(bound, ctx.file.name.c_str(), (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)30+(ctx.file.dim.y * (float)(ctx.font_size * 1.5))}, &scroll, &view);
 
 	BeginScissorMode(view.x, view. y, view. width, view. height);
 
 
-	start_line = 0 - scroll.y / (ctx.font_size);
+	start_line = 0 - scroll.y / (ctx.font_size * 1.5);
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
-	for (int y = start_line; y < start_line + 30 && y < ctx.file.dim.y; y++) {
+	for (int y = start_line; y < start_line + 200 && y < ctx.file.dim.y; y++) {
 		std::list<t_glyph *> &line = ctx.file.glyphs[y];
 		if (!line.empty()) {
 			int x = 0;
 			for (auto tmp : line) {
 				char character[2] = {tmp->c, '\0'};
-				DrawText(character, 40 + bound.x + scroll.x + x * ctx.font_size, bound.y + 30 + scroll.y + y * ctx.font_size, ctx.font_size, tmp->fg);
+				DrawText(character, 40 + bound.x + scroll.x + x * ctx.font_size, bound.y + 30 + scroll.y + y * (ctx.font_size * 1.5), ctx.font_size, tmp->fg);
 				x++;
 			}
 		}
-		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * ctx.font_size, ctx.font_size, WHITE);
+		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * (ctx.font_size * 1.5), ctx.font_size, WHITE);
 	}
-	DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * ctx.font_size, bound.y + 30 + scroll.y + cursor.y * ctx.font_size + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
+	DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * ctx.font_size, bound.y + 30 + scroll.y + cursor.y * (ctx.font_size * 1.5) + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
 	EndScissorMode();
+	if (is_saved) {
+		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, BLUE);
+	} else {
+		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, RED);
+	}
 }
 
 void LanguageServer(const Rectangle bound) {
@@ -375,6 +412,7 @@ int main(void) {
 	GuiLoadStyle(TextFormat("%s/../include/styles/terminal/style_terminal.rgs", GetApplicationDirectory()));
 
 	ctx.file.dim = VecFileToGlyph("ylt.txt");
+	ctx.file.name = "ylt.txt";
 	printf("data size: %llu", ctx.file.size);
 
 	workspace = loadWorkspace();
