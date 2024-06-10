@@ -1,4 +1,5 @@
 # include "main.h"
+#include <cassert>
 # define GLSL_VERSION 330
 # include <raylib.h>
 # define RAYGUI_IMPLEMENTATION
@@ -15,66 +16,54 @@ struct context {
 	t_file_header file;
 } ctx;
 
-Vector2 FileToGlyph(t_node **list, const char *filepath) {
-	Vector2 pos = {0};
-	Vector2 dim;
+std::list<t_glyph*> createLine(char *data, int *status, Vector2 *pos) {
+	static int iter = 0;
+	int x = 0;
+	std::list<t_glyph*> lst;
 
-	char *data = readFile(filepath);
-
-	t_node *span = 0x00;
-	for(int i = 0; data[i]; i++) {
-		t_glyph *glyph = 0x00;
-		glyph = (t_glyph *)malloc(sizeof(t_glyph));
-		if (!glyph) {
-			perror("couldn't allocat memory");
-			abort();
+	while (data[iter]) {
+		if (pos->x < x) {
+			pos->x = x;
 		}
-		glyph->c = data[i];
-		glyph->fg = WHITE;
-		if (data[i] == '\n') {
-			pos.y++;
-			pos.x = 0;
-		} else {
-			pos.x++;
+		if (data[iter] == '\n') {
+			pos->y++;
+			x = 0;
+			iter++;
+			*status = iter;
+			return (lst);
 		}
-		if (dim.x < pos.x) {
-			dim.x = pos.x;
-		}
-		if (dim.y < pos.y) {
-			dim.y = pos.y;
-		}
-		if (!span) {
-			*list = createNode(glyph);
-			span = *list;
-		} else {
-			span->next = createNode(glyph);
-			span->next->prev = span;
-			span = span->next;
-		}
-		//addNodeBack(list, createNode(glyph));
+		t_glyph * tmp = new t_glyph;
+		assert(tmp);
+		tmp->c = data[iter];
+		tmp->fg = WHITE;
+		lst.push_back(tmp);
+		iter++;
+		x++;
 	}
-	free(data);
-	return (dim);
-};
-
-t_glyph *createGlyph(const char c) {
-	t_glyph *glyph;
-
-	glyph = (t_glyph *)malloc(sizeof(t_glyph));
-	glyph->c = c;
-	glyph->fg = WHITE;
-	return (glyph);
+	*status = -1;
+	iter = 0;
+	return (lst);
 }
 
-char getGlyphC(t_node **list, int idx) {
-	t_node *span = *list;
+Vector2 VecFileToGlyph(const char *filepath) {
+	Vector2 pos;
+	int status = 0;
 
-	for (int i = 0;span->next; i++) {
-		if (idx == i) {
-			return(((t_glyph*)span->data)->c);
-		}
-		span = span->next;
+	char *data = readFile(filepath);
+	while (status > -1) {
+		ctx.file.glyphs.push_back(createLine(data, &status, &pos));
+		ctx.file.size = status;
 	}
+	free(data);
+	return (pos);
+};
+
+t_glyph *createGlyph(const char c, Color fg) {
+	t_glyph *glyph = new t_glyph;
+	assert(glyph);
+	glyph->c = c;
+	glyph->fg = fg;
+	return (glyph);
 }
 
 t_node_file loadWorkspace(void){
@@ -158,143 +147,108 @@ void ControlBar() {
 }
 
 void TextEditor(const Rectangle bound) {
-	static int cursor = 0;
 	static Vector2 scroll = {};
 	static Rectangle view = {};
-	Vector2 cursor_pos;
-	static t_node *current_glyph = *ctx.file.list;
-	static int start_line;
-	int i = 0;
+	static Vector2 cursor = {};
+	static int start_line = 0;
 
-	bool update_cursor = false;
-	bool update_scroll = false;
-
+	if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+		Vector2 mouse_pos = GetMousePosition();
+		cursor.x = floor((mouse_pos.x - 40 - bound.x - scroll.x) / ctx.font_size);
+		cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / ctx.font_size);
+		cursor.y = clamp(cursor.y, 0, ctx.file.dim.y);
+		cursor.x = clamp(cursor.x, 0, ctx.file.glyphs[cursor.y].size());
+	}
 	if (IsKeyDown(KEY_LEFT)) {
-		if (current_glyph->prev) {
-			cursor --;
-			update_cursor = true;
-			current_glyph = current_glyph->prev;
+		if (cursor.x > 0) {
+			cursor.x--;
+		} else if (cursor.y > 0){
+			cursor.y--;
+			cursor.x = ctx.file.glyphs[cursor.y].size();
 		}
 	}
 	if (IsKeyDown(KEY_RIGHT)) {
-		if (current_glyph->next) {
-			current_glyph = current_glyph->next;
-			cursor ++;
-			update_cursor = true;
+		if (cursor.x < ctx.file.glyphs[cursor.y].size()) {
+			cursor.x++;
+		} else if (cursor.y < ctx.file.dim.y) {
+			cursor.y++;
+			cursor.x = 0;
 		}
 	}
-	if (IsKeyDown(KEY_BACKSPACE) && cursor) {
-		if (getGlyphC(ctx.file.list, cursor - 1) == '\n') {
-			ctx.file.dim.y--;
-		}
-		eraseNode(cursor - 1, ctx.file.list);
-		if (current_glyph->prev) 
-			current_glyph = current_glyph->prev;
-		cursor--;
-		ctx.file.size--;
+	if (IsKeyDown(KEY_UP) && cursor.y > 0) {
+		cursor.y--;
 	}
-	if (IsKeyDown(KEY_ENTER)) {
-		if (!cursor) {
-			addNodeFront(ctx.file.list, createNode(createGlyph('\n')));
-			if (current_glyph->next) 
-				current_glyph = current_glyph->next;
-		} else {
-			t_node *new_node = createNode(createGlyph('\n'));
-			new_node->next = current_glyph->next;
-			new_node->prev = current_glyph;
-			current_glyph->next = new_node;
-			new_node->next->prev = new_node;
-			if (current_glyph->next) 
-				current_glyph = current_glyph->next;
-		}
-		cursor++;
-		ctx.file.size++;
-		ctx.file.dim.y++;
-	}
-	if (IsKeyDown(KEY_TAB)) {
-		if (!cursor) {
-			addNodeFront(ctx.file.list, createNode(createGlyph('\t')));
-			if (current_glyph->next) 
-				current_glyph = current_glyph->next;
-		} else {
-			t_node *new_node = createNode(createGlyph('\t'));
-			new_node->next = current_glyph->next;
-			new_node->prev = current_glyph;
-			current_glyph->next = new_node;
-			new_node->next->prev = new_node;
-			if (current_glyph->next) 
-				current_glyph = current_glyph->next;
-		}
-		cursor++;
-		ctx.file.size++;
+	if (IsKeyDown(KEY_DOWN) && cursor.y < ctx.file.dim.y) {
+		cursor.y++;
 	}
 
-	if (update_cursor && cursor < 0) cursor = 0;
+	auto insert_place = ctx.file.glyphs[cursor.y].begin();
+	std::advance(insert_place, cursor.x);
+
+	if (IsKeyPressed(KEY_BACKSPACE)) {
+		if (cursor.x) {
+			cursor.x--;
+			insert_place = ctx.file.glyphs[cursor.y].erase(--insert_place);
+			ctx.file.size--;
+		} else if (cursor.y >= 1 && ctx.file.glyphs[cursor.y - 1].empty()) {
+			ctx.file.glyphs.erase(ctx.file.glyphs.begin() + cursor.y - 1);
+			ctx.file.dim.y--;
+			cursor.y--;
+			cursor.x = 0;
+		} else if (cursor.y >= 1) {
+			ctx.file.dim.y--;
+			cursor.x = ctx.file.glyphs[cursor.y - 1].size();
+			cursor.y--;
+			ctx.file.glyphs[cursor.y].splice(ctx.file.glyphs[cursor.y].end(), ctx.file.glyphs[cursor.y + 1]);
+			ctx.file.glyphs.erase(ctx.file.glyphs.begin() + cursor.y + 1);
+		}
+	}
+	if (IsKeyDown(KEY_ENTER)) {
+		std::list<t_glyph *> lst = {};
+		lst.splice(lst.begin(), ctx.file.glyphs[cursor.y], insert_place++, ctx.file.glyphs[cursor.y].end());
+		cursor.y++;
+		ctx.file.glyphs.insert(ctx.file.glyphs.begin() + cursor.y, lst);
+		cursor.x = 0;
+		ctx.file.size++;
+		ctx.file.dim.y++;
+		insert_place = ctx.file.glyphs[cursor.y].begin();
+	}
+	if (IsKeyDown(KEY_TAB)) {
+		ctx.file.glyphs[cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
+		cursor.x++;
+		ctx.file.size++;
+	}
 	
 	int key = GetCharPressed();
 	while (key) {
 		if ((key >= 32) && (key <= 125)) {
-			if (!cursor) {
-				addNodeFront(ctx.file.list, createNode(createGlyph((char)key)));
-			} else {
-				t_node *new_node = createNode(createGlyph((char)key));
-				new_node->next = current_glyph->next;
-				new_node->prev = current_glyph;
-				current_glyph->next = new_node;
-				new_node->next->prev = new_node;
-				if (current_glyph->next) 
-					current_glyph = current_glyph->next;
-			}
-			cursor++;
+			ctx.file.glyphs[cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
+			cursor.x++;
 			ctx.file.size++;
 		}
-
 		key = GetCharPressed();
 	}
 
-
-	Vector2 pos = {0};
-	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)(30 + (ctx.file.dim.y + 2) * ctx.font_size * 1.5)}, &scroll, &view);
-
-
-	pos.y -= scroll.y / (ctx.font_size * 1.5);
-	int max_pos = (30 + pos.y) * ctx.font_size;
+	GuiScrollPanel(bound, "text editor:", (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)30+(ctx.file.dim.y * ctx.font_size)}, &scroll, &view);
 
 	BeginScissorMode(view.x, view. y, view. width, view. height);
 
-	t_node *tmp = *ctx.file.list;
-	for (int i = 0; i < pos.y && tmp->next;) {
-		if (((t_glyph *)tmp->data)->c == '\n') {
-			i++;
-		}
-		tmp = tmp->next;
-	}
 
-	DrawText(TextFormat(" %5i ", i + 1), bound.x, i + scroll.y, ctx.font_size, WHITE);
-	for (int d = 0;((t_glyph*)tmp->data)->c && tmp->next && pos.y < max_pos; d++) {
-		char character[2] = {((t_glyph*)tmp->data)->c, '\0'};
-		DrawText(character, 40 + bound.x + scroll.x + pos.x * ctx.font_size, bound.y + 30 + scroll.y + pos.y * ctx.font_size, ctx.font_size, BLUE);
-		if (d == cursor) {
-			cursor_pos = pos;
-		}
-		pos.x++;
-		if (pos.x > ctx.file.dim.x) {
-			ctx.file.dim.x = pos.x;
-		}
-		if (((t_glyph*)tmp->data)->c == '\n') {
-			i++;
-			pos.y++;
-			pos.x = 0;
-		}
-		tmp = tmp->next;
-	}
-
+	start_line = 0 - scroll.y / (ctx.font_size);
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
-	for (int k = 0; k <= i; k++) {
-		DrawText(TextFormat(" %5i ", k + 1), bound.x, bound.y + 30 + ctx.font_size * k + scroll.y, ctx.font_size, WHITE);
+	for (int y = start_line; y < start_line + 30 && y < ctx.file.dim.y; y++) {
+		std::list<t_glyph *> &line = ctx.file.glyphs[y];
+		if (!line.empty()) {
+			int x = 0;
+			for (auto tmp : line) {
+				char character[2] = {tmp->c, '\0'};
+				DrawText(character, 40 + bound.x + scroll.x + x * ctx.font_size, bound.y + 30 + scroll.y + y * ctx.font_size, ctx.font_size, tmp->fg);
+				x++;
+			}
+		}
+		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * ctx.font_size, ctx.font_size, WHITE);
 	}
-	DrawText(TextFormat(" %5i ", i + 2), bound.x, bound.y + 30 + ctx.font_size * (i + 1) + scroll.y, ctx.font_size, WHITE);
-	DrawRectangleLines(40 + bound.x + scroll.x + cursor_pos.x * ctx.font_size, bound.y + 30 + scroll.y + cursor_pos.y * ctx.font_size + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
+	DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * ctx.font_size, bound.y + 30 + scroll.y + cursor.y * ctx.font_size + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
 	EndScissorMode();
 }
 
@@ -420,13 +374,7 @@ int main(void) {
 
 	GuiLoadStyle(TextFormat("%s/../include/styles/terminal/style_terminal.rgs", GetApplicationDirectory()));
 
-	ctx.file.list = (t_node **)malloc(sizeof(t_node *));
-	if (!ctx.file.list) {
-		perror("Couldn't allocate memory");
-		abort();
-	}
-	*ctx.file.list = 0x00;
-	ctx.file.dim = FileToGlyph(ctx.file.list, "ylt.txt");
+	ctx.file.dim = VecFileToGlyph("ylt.txt");
 	printf("data size: %llu", ctx.file.size);
 
 	workspace = loadWorkspace();

@@ -2,9 +2,11 @@
 # include <stdint.h>
 # include <stdbool.h>
 # include <sstream>
+# include <vector>
 # include <raylib.h>
 # include <unordered_map>
 # include <linked_list.h>
+# include <list>
 
 typedef struct s_monitor {
 	int refresh_rate, height, width, id;
@@ -46,7 +48,7 @@ typedef struct s_glyph {
 typedef struct s_file_header{
 	size_t size;
 	Vector2 dim;
-	t_node **list;
+	std::vector<std::list<t_glyph*>> glyphs;
 	char *extension;
 	char *name;
 	char *path;
