@@ -14,7 +14,11 @@
 
 struct context {
 	t_workspace workspace;
-	u32 current_file = 0;
+	int current_file = 0;
+	Vector2 cursor = {};
+	bool is_saved = true;
+	Rectangle terminal_bound;
+	Rectangle texteditor_bound;
 } ctx;
 
 //need to find why it segfault sometime
@@ -106,7 +110,7 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 	return (workspace);
 }
 
-void ControlBar() {
+void ControlBar(t_workspace *workspace) {
 	static int status_bar_show = 0;
 
 	GuiDrawRectangle((Rectangle){0, 0, (float)GetScreenWidth(), 20}, 1, GREEN, BLACK);
@@ -119,6 +123,17 @@ void ControlBar() {
 	if (GuiButton((Rectangle){120, 0, 60 , 20}, "run")) {
 		status_bar_show = show_run;
 	}
+
+	int width = 0;
+	for (int x = 0; x < workspace->files.size(); x++) {
+		if (x == ctx.current_file) {
+			GuiButton({180 + (float)(x * 20), 0, 120, 20}, workspace->files[x]->name.c_str());
+			width = 100;
+		} else {
+			if (GuiButton({180 + (float)(x * 20) + width, 0, 20, 20}, TextFormat("%i", x))) ctx.current_file = x;
+		}
+	}
+
 	/*
 		file
 		edit
@@ -162,108 +177,19 @@ void saveTheFile(t_file_header file) {
 void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	static Vector2 scroll = {};
 	static Rectangle view = {};
-	static Vector2 cursor = {};
 	static int start_line = 0;
-	static bool is_saved = true;
 
-	if (CheckCollisionPointRec(GetMousePosition(), bound)) {
-		if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyDown(KEY_S) && !is_saved) {
-			saveTheFile(*workspace->files[ctx.current_file]);
-			is_saved = true;
-		}
-
-		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-			Vector2 mouse_pos = GetMousePosition();
-			cursor.x = floor((mouse_pos.x - 40 - bound.x - scroll.x) / (workspace->fontsize));
-			cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
-			cursor.y = clamp(cursor.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
-			cursor.x = clamp(cursor.x, 0, workspace->files[ctx.current_file]->glyphs[cursor.y].size());
-		}
-		if (IsKeyDown(KEY_LEFT)) {
-			if (cursor.x > 0) {
-				cursor.x--;
-			} else if (cursor.y > 0){
-				cursor.y--;
-				cursor.x = workspace->files[ctx.current_file]->glyphs[cursor.y].size();
-			}
-		}
-		if (IsKeyDown(KEY_RIGHT)) {
-			if (cursor.x < workspace->files[ctx.current_file]->glyphs[cursor.y].size()) {
-				cursor.x++;
-			} else if (cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
-				cursor.y++;
-				cursor.x = 0;
-			}
-		}
-		if (IsKeyDown(KEY_UP) && cursor.y > 0) {
-			cursor.y--;
-		}
-		if (IsKeyDown(KEY_DOWN) && cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
-			cursor.y++;
-		}
-
-		auto insert_place = workspace->files[ctx.current_file]->glyphs[cursor.y].begin();
-		std::advance(insert_place, cursor.x);
-
-		if (IsKeyPressed(KEY_BACKSPACE)) {
-			if (cursor.x) {
-				cursor.x--;
-				insert_place = workspace->files[ctx.current_file]->glyphs[cursor.y].erase(--insert_place);
-				if (is_saved)
-					is_saved = false;
-			} else if (cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[cursor.y - 1].empty()) {
-				workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + cursor.y - 1);
-				workspace->files[ctx.current_file]->dim.y--;
-				cursor.y--;
-				cursor.x = 0;
-				if (is_saved)
-					is_saved = false;
-			} else if (cursor.y >= 1) {
-				workspace->files[ctx.current_file]->dim.y--;
-				cursor.x = workspace->files[ctx.current_file]->glyphs[cursor.y - 1].size();
-				cursor.y--;
-				workspace->files[ctx.current_file]->glyphs[cursor.y].splice(workspace->files[ctx.current_file]->glyphs[cursor.y].end(), workspace->files[ctx.current_file]->glyphs[cursor.y + 1]);
-				workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + cursor.y + 1);
-				if (is_saved)
-					is_saved = false;
-			}
-		}
-		if (IsKeyDown(KEY_ENTER)) {
-			std::list<t_glyph *> lst = {};
-			lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[cursor.y].end());
-			cursor.y++;
-			workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + cursor.y, lst);
-			cursor.x = 0;
-			workspace->files[ctx.current_file]->dim.y++;
-			insert_place = workspace->files[ctx.current_file]->glyphs[cursor.y].begin();
-			if (is_saved)
-				is_saved = false;
-		}
-		if (IsKeyDown(KEY_TAB)) {
-			workspace->files[ctx.current_file]->glyphs[cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
-			cursor.x++;
-			if (is_saved)
-				is_saved = false;
-		}
-		
-		int key = GetCharPressed();
-		while (key) {
-			if ((key >= 32) && (key <= 125)) {
-				workspace->files[ctx.current_file]->glyphs[cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
-				cursor.x++;
-				if (is_saved)
-					is_saved = false;
-			}
-			key = GetCharPressed();
-		}
+	if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), bound)) {
+		Vector2 mouse_pos = GetMousePosition();
+		ctx.cursor.x = floor((mouse_pos.x - 40 - ctx.texteditor_bound.x - scroll.x) / (workspace->fontsize));
+		ctx.cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
+		ctx.cursor.y = clamp(ctx.cursor.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
+		ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
 	}
 
 	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name.c_str(), (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * workspace->fontsize + 30, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
-
-	BeginScissorMode(view.x, view. y, view. width, view. height);
-
-
 	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
+	BeginScissorMode(view.x, view. y, view. width, view. height);
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
 		std::list<t_glyph *> &line = workspace->files[ctx.current_file]->glyphs[y];
@@ -277,9 +203,9 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 		}
 		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * (workspace->fontsize * 1.5), workspace->fontsize, WHITE);
 	}
-	DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * workspace->fontsize, bound.y + 30 + scroll.y + cursor.y * (workspace->fontsize * 1.5) + workspace->fontsize * 0.5, workspace->fontsize, workspace->fontsize * 0.5, RED);
+	DrawRectangleLines(40 + bound.x + scroll.x + ctx.cursor.x * workspace->fontsize, bound.y + 30 + scroll.y + ctx.cursor.y * (workspace->fontsize * 1.5) + workspace->fontsize * 0.5, workspace->fontsize, workspace->fontsize * 0.5, RED);
 	EndScissorMode();
-	if (is_saved) {
+	if (ctx.is_saved) {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, BLUE);
 	} else {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, RED);
@@ -314,6 +240,91 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 	EndScissorMode();
 }
 
+void editorInput(t_workspace *workspace) {
+	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound)) {
+		auto insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
+		std::advance(insert_place, ctx.cursor.x);
+		if (IsKeyPressed(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S) && !ctx.is_saved) {
+			saveTheFile(*workspace->files[ctx.current_file]);
+			ctx.is_saved = true;
+		}
+		if (IsKeyPressed(KEY_LEFT)) {
+			if (ctx.cursor.x > 0) {
+				ctx.cursor.x--;
+			} else if (ctx.cursor.y > 0){
+				ctx.cursor.y--;
+				ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size();
+			}
+		}
+		if (IsKeyPressed(KEY_RIGHT)) {
+			if (ctx.cursor.x < workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size()) {
+				ctx.cursor.x++;
+			} else if (ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
+				ctx.cursor.y++;
+				ctx.cursor.x = 0;
+			}
+		}
+		if (IsKeyPressed(KEY_UP) && ctx.cursor.y > 0) {
+			ctx.cursor.y--;
+			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
+		}
+		if (IsKeyPressed(KEY_DOWN) && ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
+			ctx.cursor.y++;
+			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
+		}
+		if (IsKeyPressed(KEY_BACKSPACE)) {
+			if (ctx.cursor.x) {
+				ctx.cursor.x--;
+				insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].erase(--insert_place);
+				if (ctx.is_saved)
+					ctx.is_saved = false;
+			} else if (ctx.cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].empty()) {
+				workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y - 1);
+				workspace->files[ctx.current_file]->dim.y--;
+				ctx.cursor.y--;
+				ctx.cursor.x = 0;
+				if (ctx.is_saved)
+					ctx.is_saved = false;
+			} else if (ctx.cursor.y >= 1) {
+				workspace->files[ctx.current_file]->dim.y--;
+				ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].size();
+				ctx.cursor.y--;
+				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].splice(workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y + 1]);
+				workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y + 1);
+				if (ctx.is_saved)
+					ctx.is_saved = false;
+			}
+		}
+		if (IsKeyPressed(KEY_ENTER)) {
+			std::list<t_glyph *> lst = {};
+			lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end());
+			ctx.cursor.y++;
+			workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y, lst);
+			ctx.cursor.x = 0;
+			workspace->files[ctx.current_file]->dim.y++;
+			insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
+			if (ctx.is_saved)
+				ctx.is_saved = false;
+		}
+		if (IsKeyPressed(KEY_TAB)) {
+			workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
+			ctx.cursor.x++;
+			if (ctx.is_saved)
+				ctx.is_saved = false;
+		}
+		int key = GetCharPressed();
+		while (key) {
+			if ((key >= 32) && (key <= 125)) {
+				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
+				ctx.cursor.x++;
+				if (ctx.is_saved)
+					ctx.is_saved = false;
+			}
+			key = GetCharPressed();
+		}
+	}
+}
+
 int View(t_workspace *workspace){
 	static float sep1 = 200;
 	static float sep2 = 300;
@@ -327,15 +338,19 @@ int View(t_workspace *workspace){
 		sep2 = GetScreenHeight() - 160;
 	}
 
+	editorInput(workspace);
+
+	ctx.terminal_bound = (Rectangle){0, 20, sep1, sep2 - 20};
+	ctx.texteditor_bound = (Rectangle){sep1, 20, width - sep1, sep2 - 20};
+
 	BeginDrawing();
 	ClearBackground(BLACK);
-		TerminalOut(workspace, (Rectangle){0, 20, sep1, sep2 - 20});
-	
-		TextEditor((Rectangle){sep1, 20, width - sep1, sep2 - 20}, workspace);
+		TerminalOut(workspace, ctx.terminal_bound);
+		TextEditor(ctx.texteditor_bound, workspace);
 	
 		LanguageServer((Rectangle){0, sep2, sep3, height - sep2});
 		StackViewer((Rectangle){sep3, sep2, width - sep3, height - sep2});
-		ControlBar();
+		ControlBar(workspace);
 	EndDrawing();
 	return (1);
 }
@@ -372,7 +387,6 @@ int main(int ac, char **av) {
 	}
 
 	SetTargetFPS(240);
-	//EnableEventWaiting();
 	while (!WindowShouldClose()) {
 		switch (step) {
 			case (start): {
