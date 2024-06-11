@@ -25,3 +25,8 @@ int checkProcess(DWORD pid) {
 
 	return (ret_value);
 }
+
+//void execCmd(const char **cmd) {
+//	CreateProcessA();
+
+//}

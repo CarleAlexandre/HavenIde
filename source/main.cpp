@@ -11,6 +11,7 @@
 # include <haven_file.hpp>
 # include <stb/stb_c_lexer.h>
 # include <sstream>
+# include <haven_thread.hpp>
 
 struct context {
 	t_workspace workspace;
@@ -19,6 +20,8 @@ struct context {
 	bool is_saved = true;
 	Rectangle terminal_bound;
 	Rectangle texteditor_bound;
+	vi_mod mode;
+	t_terminal term;
 } ctx;
 
 //need to find why it segfault sometime
@@ -244,11 +247,23 @@ void editorInput(t_workspace *workspace) {
 	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound)) {
 		auto insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
 		std::advance(insert_place, ctx.cursor.x);
-		if (IsKeyPressed(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S) && !ctx.is_saved) {
-			saveTheFile(*workspace->files[ctx.current_file]);
-			ctx.is_saved = true;
+		if (IsKeyDown(KEY_LEFT_CONTROL)){
+			if (IsKeyPressed(KEY_S) && !ctx.is_saved) {
+				saveTheFile(*workspace->files[ctx.current_file]);
+				ctx.is_saved = true;
+			}
+			if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H) && ctx.current_file) {
+				ctx.current_file--;
+			}
+			if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_L) && ctx.current_file < workspace->files.size()) {
+				ctx.current_file++;
+			}
+			if (IsKeyPressed(KEY_P)) {
+				ctx.mode = normal;
+				ctx.term.open = true;
+			}
 		}
-		if (IsKeyPressed(KEY_LEFT)) {
+		if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H) && ctx.mode == normal) {
 			if (ctx.cursor.x > 0) {
 				ctx.cursor.x--;
 			} else if (ctx.cursor.y > 0){
@@ -256,7 +271,7 @@ void editorInput(t_workspace *workspace) {
 				ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size();
 			}
 		}
-		if (IsKeyPressed(KEY_RIGHT)) {
+		if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_L) && ctx.mode == normal) {
 			if (ctx.cursor.x < workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size()) {
 				ctx.cursor.x++;
 			} else if (ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
@@ -264,64 +279,95 @@ void editorInput(t_workspace *workspace) {
 				ctx.cursor.x = 0;
 			}
 		}
-		if (IsKeyPressed(KEY_UP) && ctx.cursor.y > 0) {
+		if ((IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_J) && ctx.mode == normal) && ctx.cursor.y > 0) {
 			ctx.cursor.y--;
 			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
 		}
-		if (IsKeyPressed(KEY_DOWN) && ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
+		if ((IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_K) && ctx.mode == normal) && ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
 			ctx.cursor.y++;
 			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
 		}
-		if (IsKeyPressed(KEY_BACKSPACE)) {
-			if (ctx.cursor.x) {
-				ctx.cursor.x--;
-				insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].erase(--insert_place);
-				if (ctx.is_saved)
-					ctx.is_saved = false;
-			} else if (ctx.cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].empty()) {
-				workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y - 1);
-				workspace->files[ctx.current_file]->dim.y--;
-				ctx.cursor.y--;
+		if (ctx.mode == normal) {
+			if (IsKeyPressed(KEY_I))
+				ctx.mode = insert;
+		}
+		if (ctx.mode == insert) {
+			if (IsKeyPressed(KEY_ESCAPE))
+				ctx.mode = normal;
+		}
+
+		if (ctx.mode == insert) {
+			if (IsKeyPressed(KEY_BACKSPACE)) {
+				if (ctx.cursor.x) {
+					ctx.cursor.x--;
+					insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].erase(--insert_place);
+					if (ctx.is_saved)
+						ctx.is_saved = false;
+				} else if (ctx.cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].empty()) {
+					workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y - 1);
+					workspace->files[ctx.current_file]->dim.y--;
+					ctx.cursor.y--;
+					ctx.cursor.x = 0;
+					if (ctx.is_saved)
+						ctx.is_saved = false;
+				} else if (ctx.cursor.y >= 1) {
+					workspace->files[ctx.current_file]->dim.y--;
+					ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].size();
+					ctx.cursor.y--;
+					workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].splice(workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y + 1]);
+					workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y + 1);
+					if (ctx.is_saved)
+						ctx.is_saved = false;
+				}
+			}
+			if (IsKeyPressed(KEY_ENTER)) {
+				std::list<t_glyph *> lst = {};
+				lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end());
+				ctx.cursor.y++;
+				workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y, lst);
 				ctx.cursor.x = 0;
-				if (ctx.is_saved)
-					ctx.is_saved = false;
-			} else if (ctx.cursor.y >= 1) {
-				workspace->files[ctx.current_file]->dim.y--;
-				ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].size();
-				ctx.cursor.y--;
-				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].splice(workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y + 1]);
-				workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y + 1);
+				workspace->files[ctx.current_file]->dim.y++;
+				insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
 				if (ctx.is_saved)
 					ctx.is_saved = false;
 			}
-		}
-		if (IsKeyPressed(KEY_ENTER)) {
-			std::list<t_glyph *> lst = {};
-			lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end());
-			ctx.cursor.y++;
-			workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y, lst);
-			ctx.cursor.x = 0;
-			workspace->files[ctx.current_file]->dim.y++;
-			insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
-			if (ctx.is_saved)
-				ctx.is_saved = false;
-		}
-		if (IsKeyPressed(KEY_TAB)) {
-			workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
-			ctx.cursor.x++;
-			if (ctx.is_saved)
-				ctx.is_saved = false;
-		}
-		int key = GetCharPressed();
-		while (key) {
-			if ((key >= 32) && (key <= 125)) {
-				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
+			if (IsKeyPressed(KEY_TAB)) {
+				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
 				ctx.cursor.x++;
 				if (ctx.is_saved)
 					ctx.is_saved = false;
 			}
-			key = GetCharPressed();
+			int key = GetCharPressed();
+			while (key) {
+				if ((key >= 32) && (key <= 125)) {
+					workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
+					ctx.cursor.x++;
+					if (ctx.is_saved)
+						ctx.is_saved = false;
+				}
+				key = GetCharPressed();
+			}
 		}
+	}
+}
+
+int TerminalTh(void *in, void *out, int insize, int out_size) {
+	int count = 0;
+	const char **tmp = TextSplit((const char *)in, ' ', &count);
+	
+	
+	_execv(tmp[0], tmp);
+	return(count);
+}
+
+void TerminalIn(t_workspace *workspace, const Rectangle bound) {
+	if (GuiTextBox(bound, ctx.term.in, 100, true)) {
+		ctx.term.open = false;
+		ctx.term.working = true;
+		ctx.term.enter_cmd = true;
+		
+		addCallbackFunction(createCallback(ctx.term.in, &ctx.term.out, &ctx.term.mtx, 100, 1000, TerminalTh));
+		memset(ctx.term.in, 0, 100);
 	}
 }
 
@@ -347,7 +393,9 @@ int View(t_workspace *workspace){
 	ClearBackground(BLACK);
 		TerminalOut(workspace, ctx.terminal_bound);
 		TextEditor(ctx.texteditor_bound, workspace);
-	
+		if (ctx.term.open == true) {
+			TerminalIn(workspace, {sep1, 20, width - sep1 - 30, 20});
+		}
 		LanguageServer((Rectangle){0, sep2, sep3, height - sep2});
 		StackViewer((Rectangle){sep3, sep2, width - sep3, height - sep2});
 		ControlBar(workspace);
@@ -360,6 +408,8 @@ int main(int ac, char **av) {
 	int monitor_count = 0;
 	int step = 0;
 	t_workspace workspace;
+
+	startThreadPool();
 
 	InitWindow(400, 400, "HavenIde");
 
@@ -420,5 +470,6 @@ int main(int ac, char **av) {
 		}
 	}
 	CloseWindow();
+	endThreadPool();
 	return (0);
 }

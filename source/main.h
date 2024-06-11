@@ -8,6 +8,8 @@
 # include <linked_list.h>
 # include <list>
 # include <haven_parser.hpp>
+# include <mutex>
+# include <queue>
 
 typedef struct s_monitor {
 	int refresh_rate, height, width, id;
@@ -51,6 +53,15 @@ typedef struct s_file_header{
 	std::string name;
 	std::string raw;
 }t_file_header;
+
+typedef struct s_terminal {
+	char in[100];
+	std::queue<char> out;
+	std::mutex mtx;
+	bool open = false;
+	bool enter_cmd = false;
+	bool working = false;
+} t_terminal;
 
 typedef struct s_workspace {
 	std::vector<std::string> paths;
