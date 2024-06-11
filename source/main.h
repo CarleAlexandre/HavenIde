@@ -57,6 +57,7 @@ typedef struct s_file_header{
 typedef struct s_terminal {
 	char in[100];
 	std::queue<char> out;
+	std::vector<std::string> fOut;
 	std::mutex mtx;
 	bool open = false;
 	bool enter_cmd = false;
@@ -70,3 +71,5 @@ typedef struct s_workspace {
 	std::string font;
 	u32 fontsize;
 } t_workspace;
+
+unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size);

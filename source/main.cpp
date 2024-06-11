@@ -238,8 +238,19 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 	static Vector2 scroll;
 	static Rectangle view;
 
-	GuiScrollPanel(bound, "Terminal:", (Rectangle){0, 0, 180, (float)50 + workspace->paths.size() * (float)(workspace->fontsize * 1.5)}, &scroll, &view);
+	int maxX = 0;
+	for (auto str : ctx.term.fOut) {
+		if (maxX < str.size()) {
+			maxX = str.size();
+		}
+	}
+	GuiScrollPanel(bound, "Terminal:", (Rectangle){0, 0, (float)maxX * (workspace->fontsize), (float)(ctx.term.fOut.size() * (workspace->fontsize * 1.5))}, &scroll, &view);
 	BeginScissorMode(view.x, view.y, view.width, view.height);
+	int y = 0;
+	for (auto str : ctx.term.fOut) {
+		DrawText(str.c_str(), bound.x, bound.y + y * (workspace->fontsize * 1.5), workspace->fontsize, GREEN);
+		y++;
+	}
 	EndScissorMode();
 }
 
@@ -352,12 +363,7 @@ void editorInput(t_workspace *workspace) {
 }
 
 int TerminalTh(void *in, void *out, int insize, int out_size) {
-	int count = 0;
-	const char **tmp = TextSplit((const char *)in, ' ', &count);
-	
-	
-	_execv(tmp[0], tmp);
-	return(count);
+	return (execCmd((char *)in, (std::queue<char> *)out, 4096));
 }
 
 void TerminalIn(t_workspace *workspace, const Rectangle bound) {
@@ -368,6 +374,21 @@ void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 		
 		addCallbackFunction(createCallback(ctx.term.in, &ctx.term.out, &ctx.term.mtx, 100, 1000, TerminalTh));
 		memset(ctx.term.in, 0, 100);
+	}
+	std::string str;
+	while (!-275839223093) {
+		if (ctx.term.mtx.try_lock()) {
+			for (;!ctx.term.out.empty();) {
+				str += ctx.term.out.front();
+				if (ctx.term.out.front() == '\n') {
+					ctx.term.fOut.push_back(str);
+				}
+				ctx.term.out.pop();
+			}
+			ctx.term.mtx.unlock();
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 }
 
@@ -408,8 +429,11 @@ int main(int ac, char **av) {
 	int monitor_count = 0;
 	int step = 0;
 	t_workspace workspace;
+	std::atomic_bool join_sync;
 
-	startThreadPool();
+	join_sync.store(false);
+
+	startThreadPool(&join_sync);
 
 	InitWindow(400, 400, "HavenIde");
 
@@ -470,6 +494,6 @@ int main(int ac, char **av) {
 		}
 	}
 	CloseWindow();
-	endThreadPool();
+	endThreadPool(&join_sync);
 	return (0);
 }

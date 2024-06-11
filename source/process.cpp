@@ -1,32 +1,84 @@
 # include <windows.h>
 # include <stdio.h>
 # include <psapi.h>
+# include <queue>
+# include <cassert>
 
-int checkProcess(DWORD pid) {
-	unsigned int ret_value = 0;
-	HANDLE hprocess;
+//int checkProcess(DWORD pid) {
+//	unsigned int ret_value = 0;
+//	HANDLE hprocess;
 
-	printf("test");
+//	printf("test");
 
-	//run task and get process id
+//	//run task and get process id
 
-	hprocess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
+//	hprocess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
 
-	if (!hprocess) {
-		return (-1);
+//	if (!hprocess) {
+//		return (-1);
+//	}
+
+//	//ReadProcessMemory(HANDLE hProcess, LPCVOID lpBaseAddress, LPVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesRead);
+
+//	//K32GetProcessMemoryInfo(HANDLE Process, PPROCESS_MEMORY_COUNTERS ppsmemCounters, DWORD cb);
+
+//	//GetProcessorSystemCycleTime(USHORT Group, PSYSTEM_PROCESSOR_CYCLE_TIME_INFORMATION Buffer, PDWORD ReturnedLength);
+
+
+//	return (ret_value);
+//}
+
+unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
+	STARTUPINFO  sInfo;
+	PROCESS_INFORMATION pInfo;
+	LPDWORD lpExitCode;
+	char buff;
+
+	ZeroMemory(&pInfo,  sizeof(PROCESS_INFORMATION));
+	ZeroMemory(&sInfo,  sizeof(STARTUPINFO));
+
+	HANDLE rdPipe, wrPipe;
+	if (!CreatePipe(&rdPipe, &wrPipe, NULL, 4096)) {
+		abort();
 	}
 
-	//ReadProcessMemory(HANDLE hProcess, LPCVOID lpBaseAddress, LPVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesRead);
+	sInfo.cb = sizeof(STARTUPINFO);
+	sInfo.hStdOutput = wrPipe;
+	sInfo.hStdError = wrPipe;
+	sInfo.dwFlags |= STARTF_USESTDHANDLES;
 
-	//K32GetProcessMemoryInfo(HANDLE Process, PPROCESS_MEMORY_COUNTERS ppsmemCounters, DWORD cb);
+	bool create_proc = CreateProcessA(
+	NULL, 
+	cmd, 
+	NULL, 
+	NULL, 
+	true, 
+	NORMAL_PRIORITY_CLASS | CREATE_PROTECTED_PROCESS | CREATE_NO_WINDOW, 
+	NULL, 
+	NULL, 
+	&sInfo, 
+	&pInfo);
 
-	//GetProcessorSystemCycleTime(USHORT Group, PSYSTEM_PROCESSOR_CYCLE_TIME_INFORMATION Buffer, PDWORD ReturnedLength);
+	assert(create_proc);
+	CloseHandle(&sInfo);
+	CloseHandle(&pInfo);
+	CloseHandle(wrPipe);
 
+	bool bRead;
+	DWORD dwRead;
 
-	return (ret_value);
+	int x = 0;
+	for (;;) {
+		bRead = ReadFile(rdPipe, &buff, 1, &dwRead, NULL);
+		if (!bRead || !dwRead) break;
+		if (x > max_size) {
+			out->pop();
+		} else {
+			x++;
+		}
+		out->push(buff);
+	}
+
+	GetExitCodeProcess(&pInfo, lpExitCode);
+	return (*lpExitCode);
 }
-
-//void execCmd(const char **cmd) {
-//	CreateProcessA();
-
-//}
