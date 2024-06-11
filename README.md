@@ -1,2 +1,4 @@
-need to update render (only draw visible glyph and update render frame only if needed !!);
-also need to keep in data currect glyph pointer of cursor pos for quicker data access;
+Corriger pourquoi la sortie terminal est vide, supprimer stderr et stack buffer
+optimiser rendu terminal
+ajouter l'a fonction d'execution;
+Trouver le Starting Segfault !!!
