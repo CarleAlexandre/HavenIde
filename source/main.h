@@ -7,6 +7,7 @@
 # include <unordered_map>
 # include <linked_list.h>
 # include <list>
+# include <haven_parser.hpp>
 
 typedef struct s_monitor {
 	int refresh_rate, height, width, id;
@@ -31,13 +32,12 @@ typedef enum {
 	visual_block = 3,
 } vi_mod;
 
-typedef struct s_node_file {
-	FilePathList files;
-	const char *path;
-	int depth;
-	bool isDirectory = false;
-	std::unordered_map<const char *, s_node_file> child;
-} t_node_file;
+typedef enum {
+	path_tok = 1,
+	theme_tok = 2,
+	font_tok = 3,
+	fontsize_tok = 4,
+}workspace_token_e;
 
 typedef struct s_glyph {
 	char c;
@@ -46,8 +46,16 @@ typedef struct s_glyph {
 } t_glyph;
 
 typedef struct s_file_header{
-	size_t size;
 	Vector2 dim;
 	std::vector<std::list<t_glyph*>> glyphs;
 	std::string name;
+	std::string raw;
 }t_file_header;
+
+typedef struct s_workspace {
+	std::vector<std::string> paths;
+	std::vector<t_file_header *> files;
+	std::string theme;
+	std::string font;
+	u32 fontsize;
+} t_workspace;

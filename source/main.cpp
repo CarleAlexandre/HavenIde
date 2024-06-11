@@ -9,53 +9,43 @@
 # include <stdio.h>
 # include <haven_logic.h>
 # include <haven_file.hpp>
+# include <stb/stb_c_lexer.h>
+# include <sstream>
 
 struct context {
-	int cursor_pos;
-	int font_size;
-	t_file_header file;
+	t_workspace workspace;
+	u32 current_file = 0;
 } ctx;
 
-std::list<t_glyph*> createLine(char *data, int *status, Vector2 *pos) {
-	static int iter = 0;
-	int x = 0;
-	std::list<t_glyph*> lst;
+//need to find why it segfault sometime
+t_file_header *loadFileRW(const char *filepath) {
+	assert(filepath);
+	t_file_header *new_file = (t_file_header *)malloc(sizeof(t_file_header));
+	assert(new_file);
+	new_file->name = filepath;
+	new_file->raw = readFile(new_file->name.c_str());
+	assert(!new_file->raw.empty());
 
-	while (data[iter]) {
-		if (pos->x < x) {
-			pos->x = x;
+	std::stringstream stream(new_file->raw);
+	std::string line = {};
+	while(std::getline(stream, line)) {
+		std::list<t_glyph *> lst = {};
+		for (auto c : line) {
+			t_glyph *glyph = (t_glyph*)malloc(sizeof(t_glyph));
+			assert(glyph);
+			glyph->c = c;
+			glyph->fg = WHITE;
+			glyph->bg = BLACK;
+			lst.push_back(glyph);
 		}
-		if (data[iter] == '\n') {
-			pos->y++;
-			x = 0;
-			iter++;
-			*status = iter;
-			return (lst);
+		t_glyph *glyph = (t_glyph*)malloc(sizeof(t_glyph));
+		if (lst.size() > new_file->dim.x) {
+			new_file->dim.x = new_file->glyphs.size();
 		}
-		t_glyph * tmp = new t_glyph;
-		assert(tmp);
-		tmp->c = data[iter];
-		tmp->fg = WHITE;
-		lst.push_back(tmp);
-		iter++;
-		x++;
+		new_file->glyphs.push_back(lst);
+		new_file->dim.y++;
 	}
-	*status = -1;
-	iter = 0;
-	return (lst);
-}
-
-Vector2 VecFileToGlyph(const char *filepath) {
-	Vector2 pos;
-	int status = 0;
-
-	char *data = readFile(filepath);
-	while (status > -1) {
-		ctx.file.glyphs.push_back(createLine(data, &status, &pos));
-		ctx.file.size = status;
-	}
-	free(data);
-	return (pos);
+	return (new_file);
 };
 
 t_glyph *createGlyph(const char c, Color fg) {
@@ -66,46 +56,54 @@ t_glyph *createGlyph(const char c, Color fg) {
 	return (glyph);
 }
 
-t_node_file loadWorkspace(void){
-	FilePathList workspace_files;
-	workspace_files = LoadDirectoryFilesEx(GetWorkingDirectory(), NULL, true);
-	int depth = 1;
-	t_node_file root;
+void splitPath(std::string &from, std::vector<std::string> &paths) {
+	std::string span;
+	std::stringstream stream(from.c_str());
 
-	root.files = LoadDirectoryFiles(GetWorkingDirectory());
-	root.depth = 0;
-	root.path = GetWorkingDirectory();
-
-	t_node_file *current_node;
-	current_node = &root;
-	for (int i = 0; i < current_node->files.count; i++) {
-		t_node_file child;
-		child.path = current_node->files.paths[i];
-		child.files = LoadDirectoryFiles(child.path);
-		child.depth = depth;
-		if (DirectoryExists(current_node->files.paths[i])) {
-			child.isDirectory = true;
-		} else {
-			child.isDirectory = false;
-		}
-		current_node->child.insert( {child.path, child});
+	while (std::getline(stream, span)) {
+		paths.push_back(span);
 	}
-	for (int y = 0; y < root.files.count; y++) {
-		current_node = &root.child[root.files.paths[y]];
-		for (int i = 0; i < current_node->files.count; i++) {
-			t_node_file child;
-			child.path = current_node->files.paths[i];
-			child.files = LoadDirectoryFiles(child.path);
-			child.depth = depth;
-			if (DirectoryExists(current_node->files.paths[i])) {
-				child.isDirectory = true;
-			} else {
-				child.isDirectory = false;
+}
+
+t_workspace loadWorkspace(const char *workspace_filepath){
+	t_workspace workspace;
+	std::unordered_map<std::string, workspace_token_e> dictionnary = {
+		{"paths", path_tok},
+		{"theme", theme_tok},
+		{"font", font_tok},
+		{"fontsize", fontsize_tok},
+	};
+
+	std::string data = readFile(workspace_filepath);
+
+	std::vector<t_token> tok = tokenizer(data, ",", 1, dictionnary);
+
+	for (auto token: tok) {
+		switch (token.identifier) {
+			case (path_tok): {
+				splitPath(token.value, workspace.paths);
+				break;
 			}
-			current_node->child.insert( {child.path, child});
+			case (theme_tok): {
+				workspace.theme = token.value;
+				break;
+			}
+			case (font_tok): {
+				workspace.font = token.value;
+				break;
+			}
+			case (fontsize_tok): {
+				workspace.fontsize = atoi(token.value.c_str());
+				break;
+			}
+			default:break;
 		}
 	}
-	return (root);
+	for (auto file : workspace.paths) {
+		assert(!file.empty());
+		workspace.files.push_back(loadFileRW(file.c_str()));
+	}
+	return (workspace);
 }
 
 void ControlBar() {
@@ -156,11 +154,12 @@ void saveTheFile(t_file_header file) {
 		}
 		stream += '\n';
 	}
-	writeFile(ctx.file.name.c_str(), stream.c_str(), stream.size());
-	stream.clear();
+	writeFile(file.name.c_str(), stream.c_str(), stream.size());
+	file.raw.clear();
+	file.raw = stream;
 }
 
-void TextEditor(const Rectangle bound) {
+void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	static Vector2 scroll = {};
 	static Rectangle view = {};
 	static Vector2 cursor = {};
@@ -168,29 +167,29 @@ void TextEditor(const Rectangle bound) {
 	static bool is_saved = true;
 
 	if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyDown(KEY_S) && !is_saved) {
-		saveTheFile(ctx.file);
+		saveTheFile(*workspace->files[ctx.current_file]);
 		is_saved = true;
 	}
 
 	if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
 		Vector2 mouse_pos = GetMousePosition();
-		cursor.x = floor((mouse_pos.x - 40 - bound.x - scroll.x) / (ctx.font_size));
-		cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (ctx.font_size * 1.5));
-		cursor.y = clamp(cursor.y, 0, ctx.file.dim.y - 1);
-		cursor.x = clamp(cursor.x, 0, ctx.file.glyphs[cursor.y].size());
+		cursor.x = floor((mouse_pos.x - 40 - bound.x - scroll.x) / (workspace->fontsize));
+		cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
+		cursor.y = clamp(cursor.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
+		cursor.x = clamp(cursor.x, 0, workspace->files[ctx.current_file]->glyphs[cursor.y].size());
 	}
 	if (IsKeyDown(KEY_LEFT)) {
 		if (cursor.x > 0) {
 			cursor.x--;
 		} else if (cursor.y > 0){
 			cursor.y--;
-			cursor.x = ctx.file.glyphs[cursor.y].size();
+			cursor.x = workspace->files[ctx.current_file]->glyphs[cursor.y].size();
 		}
 	}
 	if (IsKeyDown(KEY_RIGHT)) {
-		if (cursor.x < ctx.file.glyphs[cursor.y].size()) {
+		if (cursor.x < workspace->files[ctx.current_file]->glyphs[cursor.y].size()) {
 			cursor.x++;
-		} else if (cursor.y < ctx.file.dim.y - 1) {
+		} else if (cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
 			cursor.y++;
 			cursor.x = 0;
 		}
@@ -198,53 +197,50 @@ void TextEditor(const Rectangle bound) {
 	if (IsKeyDown(KEY_UP) && cursor.y > 0) {
 		cursor.y--;
 	}
-	if (IsKeyDown(KEY_DOWN) && cursor.y < ctx.file.dim.y - 1) {
+	if (IsKeyDown(KEY_DOWN) && cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
 		cursor.y++;
 	}
 
-	auto insert_place = ctx.file.glyphs[cursor.y].begin();
+	auto insert_place = workspace->files[ctx.current_file]->glyphs[cursor.y].begin();
 	std::advance(insert_place, cursor.x);
 
 	if (IsKeyPressed(KEY_BACKSPACE)) {
 		if (cursor.x) {
 			cursor.x--;
-			insert_place = ctx.file.glyphs[cursor.y].erase(--insert_place);
-			ctx.file.size--;
+			insert_place = workspace->files[ctx.current_file]->glyphs[cursor.y].erase(--insert_place);
 			if (is_saved)
 				is_saved = false;
-		} else if (cursor.y >= 1 && ctx.file.glyphs[cursor.y - 1].empty()) {
-			ctx.file.glyphs.erase(ctx.file.glyphs.begin() + cursor.y - 1);
-			ctx.file.dim.y--;
+		} else if (cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[cursor.y - 1].empty()) {
+			workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + cursor.y - 1);
+			workspace->files[ctx.current_file]->dim.y--;
 			cursor.y--;
 			cursor.x = 0;
 			if (is_saved)
 				is_saved = false;
 		} else if (cursor.y >= 1) {
-			ctx.file.dim.y--;
-			cursor.x = ctx.file.glyphs[cursor.y - 1].size();
+			workspace->files[ctx.current_file]->dim.y--;
+			cursor.x = workspace->files[ctx.current_file]->glyphs[cursor.y - 1].size();
 			cursor.y--;
-			ctx.file.glyphs[cursor.y].splice(ctx.file.glyphs[cursor.y].end(), ctx.file.glyphs[cursor.y + 1]);
-			ctx.file.glyphs.erase(ctx.file.glyphs.begin() + cursor.y + 1);
+			workspace->files[ctx.current_file]->glyphs[cursor.y].splice(workspace->files[ctx.current_file]->glyphs[cursor.y].end(), workspace->files[ctx.current_file]->glyphs[cursor.y + 1]);
+			workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + cursor.y + 1);
 			if (is_saved)
 				is_saved = false;
 		}
 	}
 	if (IsKeyDown(KEY_ENTER)) {
 		std::list<t_glyph *> lst = {};
-		lst.splice(lst.begin(), ctx.file.glyphs[cursor.y], insert_place++, ctx.file.glyphs[cursor.y].end());
+		lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[cursor.y].end());
 		cursor.y++;
-		ctx.file.glyphs.insert(ctx.file.glyphs.begin() + cursor.y, lst);
+		workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + cursor.y, lst);
 		cursor.x = 0;
-		ctx.file.size++;
-		ctx.file.dim.y++;
-		insert_place = ctx.file.glyphs[cursor.y].begin();
+		workspace->files[ctx.current_file]->dim.y++;
+		insert_place = workspace->files[ctx.current_file]->glyphs[cursor.y].begin();
 		if (is_saved)
 			is_saved = false;
 	}
 	if (IsKeyDown(KEY_TAB)) {
-		ctx.file.glyphs[cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
+		workspace->files[ctx.current_file]->glyphs[cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
 		cursor.x++;
-		ctx.file.size++;
 		if (is_saved)
 			is_saved = false;
 	}
@@ -252,35 +248,34 @@ void TextEditor(const Rectangle bound) {
 	int key = GetCharPressed();
 	while (key) {
 		if ((key >= 32) && (key <= 125)) {
-			ctx.file.glyphs[cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
+			workspace->files[ctx.current_file]->glyphs[cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
 			cursor.x++;
-			ctx.file.size++;
 			if (is_saved)
 				is_saved = false;
 		}
 		key = GetCharPressed();
 	}
 
-	GuiScrollPanel(bound, ctx.file.name.c_str(), (Rectangle){0, 0, (ctx.file.dim.x + 5) * ctx.font_size + 30, (float)30+(ctx.file.dim.y * (float)(ctx.font_size * 1.5))}, &scroll, &view);
+	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name.c_str(), (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * workspace->fontsize + 30, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
 
 	BeginScissorMode(view.x, view. y, view. width, view. height);
 
 
-	start_line = 0 - scroll.y / (ctx.font_size * 1.5);
+	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
-	for (int y = start_line; y < start_line + 200 && y < ctx.file.dim.y; y++) {
-		std::list<t_glyph *> &line = ctx.file.glyphs[y];
+	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
+		std::list<t_glyph *> &line = workspace->files[ctx.current_file]->glyphs[y];
 		if (!line.empty()) {
 			int x = 0;
 			for (auto tmp : line) {
 				char character[2] = {tmp->c, '\0'};
-				DrawText(character, 40 + bound.x + scroll.x + x * ctx.font_size, bound.y + 30 + scroll.y + y * (ctx.font_size * 1.5), ctx.font_size, tmp->fg);
+				DrawText(character, 40 + bound.x + scroll.x + x * workspace->fontsize, bound.y + 30 + scroll.y + y * (workspace->fontsize * 1.5), workspace->fontsize, tmp->fg);
 				x++;
 			}
 		}
-		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * (ctx.font_size * 1.5), ctx.font_size, WHITE);
+		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * (workspace->fontsize * 1.5), workspace->fontsize, WHITE);
 	}
-	DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * ctx.font_size, bound.y + 30 + scroll.y + cursor.y * (ctx.font_size * 1.5) + ctx.font_size * 0.5, ctx.font_size, ctx.font_size * 0.5, RED);
+	DrawRectangleLines(40 + bound.x + scroll.x + cursor.x * workspace->fontsize, bound.y + 30 + scroll.y + cursor.y * (workspace->fontsize * 1.5) + workspace->fontsize * 0.5, workspace->fontsize, workspace->fontsize * 0.5, RED);
 	EndScissorMode();
 	if (is_saved) {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, BLUE);
@@ -293,7 +288,7 @@ void LanguageServer(const Rectangle bound) {
 	static Vector2 scroll;
 	static Rectangle view;
 
-	GuiScrollPanel(bound, "lsp:", (Rectangle){}, &scroll, &view);
+	GuiScrollPanel(bound, "stdErr:", (Rectangle){}, &scroll, &view);
 	BeginScissorMode(view.x, view.y, view.width, view.height);
 	EndScissorMode();
 }
@@ -307,62 +302,21 @@ void StackViewer(const Rectangle bound) {
 	EndScissorMode();
 }
 
-void Performance(const Rectangle bound) {
-	static Vector2 scroll;
-	static Rectangle view;
-	static float value = 0;
 
-	if (value < 100)
-		value++;
-	GuiScrollPanel(bound, "performance:", bound, &scroll, &view);
-	BeginScissorMode(view.x, view.y, view.width, view.height);
-		GuiProgressBar({bound.x, bound.y + 40, 100, 20},	NULL, NULL, &value, 0, 100);
-	EndScissorMode();
-}
-
-
-void FileExplorer(t_node_file *workspace_files, const Rectangle bound) {	
+void TerminalOut(t_workspace *workspace, const Rectangle bound) {	
 	static Vector2 scroll;
 	static Rectangle view;
 
-	int max_size;
-	for (int i = 0; i < workspace_files->files.count;i++ && max_size++) {
-		max_size += workspace_files->child[workspace_files->files.paths[i]].files.count;
-	}
-
-	GuiScrollPanel(bound, "Workspace", (Rectangle){0, 0, 180, (float)50 + workspace_files->files.count + max_size * 20}, &scroll, &view);
+	GuiScrollPanel(bound, "Terminal:", (Rectangle){0, 0, 180, (float)50 + workspace->paths.size() * (float)(workspace->fontsize * 1.5)}, &scroll, &view);
 	BeginScissorMode(view.x, view.y, view.width, view.height);
-		for (int i = 0; i < workspace_files->files.count; i++) {
-			if (workspace_files->child[workspace_files->files.paths[i]].isDirectory) {
-				DrawText(GetFileName(workspace_files->child[workspace_files->files.paths[i]].path), 20 + scroll.x, 50 + 20 * i * workspace_files->child[workspace_files->files.paths[i]].files.count + scroll.y, ctx.font_size, RAYWHITE);
-			} else {
-				DrawText(GetFileName(workspace_files->child[workspace_files->files.paths[i]].path), 20 + scroll.x, 50 + 20 * i * workspace_files->child[workspace_files->files.paths[i]].files.count + scroll.y, ctx.font_size, WHITE);
-			}
-			t_node_file *node;
-			node = &workspace_files->child[workspace_files->files.paths[i]];
-			for (int k = 0; k < node->files.count; k++) {
-				if (node->child[node->files.paths[k]].isDirectory) {
-					DrawText(GetFileName(node->child[node->files.paths[k]].path), 40 + scroll.x, 50 + 20 * i + k + scroll.y, ctx.font_size, RAYWHITE);
-				} else {
-					DrawText(GetFileName(node->child[node->files.paths[k]].path), 40 + scroll.x, 50 + 20 * i + k + scroll.y, ctx.font_size, WHITE);
-				}
-			}
-		}
 	EndScissorMode();
 }
 
-int View(t_node_file *workspace_files){
-	static float sep1 = 160;
+int View(t_workspace *workspace){
+	static float sep1 = 200;
 	static float sep2 = 300;
 	static float sep3 = 300;
-	static float sep4 = 160;
-	//static Rectangle file_bound; = (Rectangle){0, 20, 200, 300 - 20};
-	//static Rectangle text_bound;
-	//static Rectangle lsp_bound;
-	//static Rectangle stack_bound;
-	//static Rectangle pref_bound;
 	float height, width;
-
 
 	height = GetScreenHeight();
 	width = GetScreenWidth();
@@ -373,26 +327,24 @@ int View(t_node_file *workspace_files){
 
 	BeginDrawing();
 	ClearBackground(BLACK);
-		FileExplorer(workspace_files, (Rectangle){0, 20, sep1, sep2 - 20});
+		TerminalOut(workspace, (Rectangle){0, 20, sep1, sep2 - 20});
 	
-		TextEditor((Rectangle){sep1, 20, width - sep1 - sep4, sep2 - 20});
+		TextEditor((Rectangle){sep1, 20, width - sep1, sep2 - 20}, workspace);
 	
 		LanguageServer((Rectangle){0, sep2, sep3, height - sep2});
-		StackViewer((Rectangle){sep3, sep2, width - sep3 - sep4, height - sep2});
-		Performance((Rectangle){width - sep4, 20, width - sep4, height - 20});
+		StackViewer((Rectangle){sep3, sep2, width - sep3, height - sep2});
 		ControlBar();
 	EndDrawing();
 	return (1);
 }
 
-int main(void) {
+int main(int ac, char **av) {
 	//t_file_header openfile;
 	int monitor_count = 0;
 	int step = 0;
-	t_node_file workspace;
-	ctx.font_size = 8;
+	t_workspace workspace;
 
-	InitWindow(200, 200, "HavenIde");
+	InitWindow(400, 400, "HavenIde");
 
 	monitor_count = GetMonitorCount();
 
@@ -411,11 +363,11 @@ int main(void) {
 
 	GuiLoadStyle(TextFormat("%s/../include/styles/terminal/style_terminal.rgs", GetApplicationDirectory()));
 
-	ctx.file.dim = VecFileToGlyph("ylt.txt");
-	ctx.file.name = "ylt.txt";
-	printf("data size: %llu", ctx.file.size);
-
-	workspace = loadWorkspace();
+	if (ac <= 1) {
+		workspace = loadWorkspace("default.workspace");
+	} else {
+		workspace = loadWorkspace(av[1]);
+	}
 
 	SetTargetFPS(30);
 	//EnableEventWaiting();
@@ -431,8 +383,8 @@ int main(void) {
 							SetWindowMonitor(displays[i].id);
 							SetWindowMaxSize(displays[i].width, displays[i].height);
 							SetWindowMinSize(720, 480);
-							SetWindowSize(720, 480);
-							SetWindowState(FLAG_WINDOW_RESIZABLE);
+							SetWindowSize(720 * 0.5, 480 * 0.5);
+							SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNDECORATED);
 							const Vector2 pos = Vector2Add(GetMonitorPosition(displays[i].id), (Vector2){(float)((displays[i].width - 720) * 0.5), (float)((displays[i].height - 480) * 0.5)});
 							SetWindowPosition(pos.x, pos.y);
 							step = stdview;

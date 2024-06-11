@@ -1,0 +1,7 @@
+paths:source/main.cpp
+source/main.h
+source/process.cpp
+Makefile,
+theme:default,
+font:default,
+fontsize:8,
