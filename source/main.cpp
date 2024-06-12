@@ -33,10 +33,10 @@ t_glyph *createGlyph(char c, Color fg, Color bg) {
 	return (glyph);
 }
 
-std::list<t_glyph *> loadGlyphLine(const char *data, int *x) {
+std::list<t_glyph *> loadGlyphLine(const char *data, float *x) {
 	std::list<t_glyph *> lst;
 
-	for (int i = 0; data[i] != '\n'; i++) {
+	for (int i = 0; data[i] && data[i] != '\n'; i++) {
 		lst.push_back(createGlyph(data[i], WHITE, BLACK));
 		if (i > *x) *x = i;
 	}
@@ -55,7 +55,7 @@ t_file_header *loadFileRW(const char *filepath) {
 
 	const char **split = GetTextLines(data, &count);
 	for (int i = 0; i < count; i++) {
-		new_file->glyphs.push_back(loadGlyphLine(split[i], (int*)&new_file->dim.x));
+		new_file->glyphs.push_back(loadGlyphLine(split[i], &new_file->dim.x));
 		new_file->dim.y++;
 	}
 	split = 0x00;
@@ -109,7 +109,7 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 	for (auto file : workspace.paths) {
 		auto tmp = loadFileRW(file.c_str());
 		assert(tmp);
-		//workspace.files.push_back(tmp);
+		workspace.files.push_back(tmp);
 	}
 	free(data);
 	return (workspace);
@@ -216,25 +216,6 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	}
 }
 
-void LanguageServer(const Rectangle bound) {
-	static Vector2 scroll;
-	static Rectangle view;
-
-	GuiScrollPanel(bound, "stdErr:", (Rectangle){}, &scroll, &view);
-	BeginScissorMode(view.x, view.y, view.width, view.height);
-	EndScissorMode();
-}
-
-void StackViewer(const Rectangle bound) {
-	static Vector2 scroll;
-	static Rectangle view;
-
-	GuiScrollPanel(bound, "stack:", (Rectangle){}, &scroll, &view);
-	BeginScissorMode(view.x, view.y, view.width, view.height);
-	EndScissorMode();
-}
-
-
 void TerminalOut(t_workspace *workspace, const Rectangle bound) {	
 	static Vector2 scroll;
 	static Rectangle view;
@@ -264,10 +245,10 @@ void editorInput(t_workspace *workspace) {
 				saveTheFile(*workspace->files[ctx.current_file]);
 				ctx.is_saved = true;
 			}
-			if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H) && ctx.current_file) {
+			if ((IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H)) && ctx.current_file) {
 				ctx.current_file--;
 			}
-			if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_L) && ctx.current_file < workspace->files.size()) {
+			if ((IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_L)) && ctx.current_file < workspace->files.size() - 1) {
 				ctx.current_file++;
 			}
 			if (IsKeyPressed(KEY_P)) {
@@ -300,8 +281,10 @@ void editorInput(t_workspace *workspace) {
 			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
 		}
 		if (ctx.mode == normal) {
-			if (IsKeyPressed(KEY_I))
+			if (IsKeyPressed(KEY_I)) {
 				ctx.mode = insert;
+				GetKeyPressed();
+			}
 		}
 		if (ctx.mode == insert) {
 			if (IsKeyPressed(KEY_ESCAPE))
@@ -395,21 +378,15 @@ void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 
 int View(t_workspace *workspace){
 	static float sep1 = 200;
-	static float sep2 = 300;
-	static float sep3 = 300;
 	float height, width;
 
 	height = GetScreenHeight();
 	width = GetScreenWidth();
 
-	if (IsWindowResized()) {
-		sep2 = GetScreenHeight() - 160;
-	}
-
 	editorInput(workspace);
 
-	ctx.terminal_bound = (Rectangle){0, 20, sep1, sep2 - 20};
-	ctx.texteditor_bound = (Rectangle){sep1, 20, width - sep1, sep2 - 20};
+	ctx.terminal_bound = (Rectangle){0, 20, sep1, height - 20};
+	ctx.texteditor_bound = (Rectangle){sep1, 20, width - sep1, height - 20};
 
 	BeginDrawing();
 	ClearBackground(BLACK);
@@ -418,15 +395,12 @@ int View(t_workspace *workspace){
 		if (ctx.term.open == true) {
 			TerminalIn(workspace, {sep1, 20, width - sep1 - 30, 20});
 		}
-		LanguageServer((Rectangle){0, sep2, sep3, height - sep2});
-		StackViewer((Rectangle){sep3, sep2, width - sep3, height - sep2});
 		ControlBar(workspace);
 	EndDrawing();
 	return (1);
 }
 
 int main(int ac, char **av) {
-	//t_file_header openfile;
 	int monitor_count = 0;
 	int step = 0;
 	t_workspace workspace;
@@ -474,10 +448,9 @@ int main(int ac, char **av) {
 							SetWindowMonitor(displays[i].id);
 							SetWindowMaxSize(displays[i].width, displays[i].height);
 							SetWindowMinSize(720, 480);
-							SetWindowSize(720 * 0.5, 480 * 0.5);
+							SetWindowSize(1600, 1000);
 							SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNDECORATED);
-							const Vector2 pos = Vector2Add(GetMonitorPosition(displays[i].id), (Vector2){(float)((displays[i].width - 720) * 0.5), (float)((displays[i].height - 480) * 0.5)});
-							SetWindowPosition(pos.x, pos.y);
+							SetWindowPosition(0, 0);
 							step = stdview;
 							free (displays);
 							displays = 0x00;
