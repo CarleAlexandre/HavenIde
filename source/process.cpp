@@ -28,6 +28,7 @@
 //	return (ret_value);
 //}
 
+#ifdef _WIN32
 unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
 	STARTUPINFO  sInfo;
 	PROCESS_INFORMATION pInfo;
@@ -82,3 +83,10 @@ unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
 	GetExitCodeProcess(&pInfo, lpExitCode);
 	return (*lpExitCode);
 }
+#elif 
+
+unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
+	return (-1);
+}
+
+#endif

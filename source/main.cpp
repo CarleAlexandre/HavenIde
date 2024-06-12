@@ -8,7 +8,6 @@
 # include <stdlib.h>
 # include <stdio.h>
 # include <haven_logic.h>
-# include <haven_file.hpp>
 # include <stb/stb_c_lexer.h>
 # include <sstream>
 # include <haven_thread.hpp>
@@ -24,44 +23,45 @@ struct context {
 	t_terminal term;
 } ctx;
 
-//need to find why it segfault sometime
-t_file_header *loadFileRW(const char *filepath) {
-	assert(filepath);
-	t_file_header *new_file = (t_file_header *)malloc(sizeof(t_file_header));
-	assert(new_file);
-	new_file->name = filepath;
-	new_file->raw = readFile(new_file->name.c_str());
-	assert(!new_file->raw.empty());
+t_glyph *createGlyph(char c, Color fg, Color bg) {
+	t_glyph *glyph;
 
-	std::stringstream stream(new_file->raw);
-	std::string line = {};
-	while(std::getline(stream, line)) {
-		std::list<t_glyph *> lst = {};
-		for (auto c : line) {
-			t_glyph *glyph = (t_glyph*)malloc(sizeof(t_glyph));
-			assert(glyph);
-			glyph->c = c;
-			glyph->fg = WHITE;
-			glyph->bg = BLACK;
-			lst.push_back(glyph);
-		}
-		t_glyph *glyph = (t_glyph*)malloc(sizeof(t_glyph));
-		if (lst.size() > new_file->dim.x) {
-			new_file->dim.x = new_file->glyphs.size();
-		}
-		new_file->glyphs.push_back(lst);
-		new_file->dim.y++;
-	}
-	return (new_file);
-};
-
-t_glyph *createGlyph(const char c, Color fg) {
-	t_glyph *glyph = new t_glyph;
-	assert(glyph);
+	glyph = (t_glyph *)malloc(sizeof(t_glyph));
 	glyph->c = c;
 	glyph->fg = fg;
+	glyph->bg = bg;
 	return (glyph);
 }
+
+std::list<t_glyph *> loadGlyphLine(const char *data, int *x) {
+	std::list<t_glyph *> lst;
+
+	for (int i = 0; data[i] != '\n'; i++) {
+		lst.push_back(createGlyph(data[i], WHITE, BLACK));
+		if (i > *x) *x = i;
+	}
+	return (lst);
+}
+
+t_file_header *loadFileRW(const char *filepath) {
+	int count = 0;
+	assert(filepath);
+	t_file_header *new_file = 0x00;
+	new_file = (t_file_header *)malloc(sizeof(t_file_header));
+	assert(new_file);
+	memset(new_file, 0, sizeof(t_file_header));
+	new_file->name = strdup(filepath);
+	char *data = LoadFileText(filepath);
+
+	const char **split = GetTextLines(data, &count);
+	for (int i = 0; i < count; i++) {
+		new_file->glyphs.push_back(loadGlyphLine(split[i], (int*)&new_file->dim.x));
+		new_file->dim.y++;
+	}
+	split = 0x00;
+	free(data);
+	return (new_file);
+};
 
 void splitPath(std::string &from, std::vector<std::string> &paths) {
 	std::string span;
@@ -81,7 +81,7 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 		{"fontsize", fontsize_tok},
 	};
 
-	std::string data = readFile(workspace_filepath);
+	char *data = LoadFileText(workspace_filepath);
 
 	std::vector<t_token> tok = tokenizer(data, ",", 1, dictionnary);
 
@@ -107,9 +107,11 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 		}
 	}
 	for (auto file : workspace.paths) {
-		assert(!file.empty());
-		workspace.files.push_back(loadFileRW(file.c_str()));
+		auto tmp = loadFileRW(file.c_str());
+		assert(tmp);
+		//workspace.files.push_back(tmp);
 	}
+	free(data);
 	return (workspace);
 }
 
@@ -130,7 +132,7 @@ void ControlBar(t_workspace *workspace) {
 	int width = 0;
 	for (int x = 0; x < workspace->files.size(); x++) {
 		if (x == ctx.current_file) {
-			GuiButton({180 + (float)(x * 20), 0, 120, 20}, workspace->files[x]->name.c_str());
+			GuiButton({180 + (float)(x * 20), 0, 120, 20}, workspace->files[x]->name);
 			width = 100;
 		} else {
 			if (GuiButton({180 + (float)(x * 20) + width, 0, 20, 20}, TextFormat("%i", x))) ctx.current_file = x;
@@ -172,9 +174,8 @@ void saveTheFile(t_file_header file) {
 		}
 		stream += '\n';
 	}
-	writeFile(file.name.c_str(), stream.c_str(), stream.size());
-	file.raw.clear();
-	file.raw = stream;
+	SaveFileText(file.name, (char *)stream.c_str());
+	stream.clear();
 }
 
 void TextEditor(const Rectangle bound, t_workspace *workspace) {
@@ -190,7 +191,7 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 		ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
 	}
 
-	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name.c_str(), (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * workspace->fontsize + 30, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
+	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name, (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * workspace->fontsize + 30, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
 	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
 	BeginScissorMode(view.x, view. y, view. width, view. height);
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
@@ -343,7 +344,7 @@ void editorInput(t_workspace *workspace) {
 					ctx.is_saved = false;
 			}
 			if (IsKeyPressed(KEY_TAB)) {
-				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph('\t', WHITE));
+				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph('\t', WHITE, BLACK));
 				ctx.cursor.x++;
 				if (ctx.is_saved)
 					ctx.is_saved = false;
@@ -351,7 +352,7 @@ void editorInput(t_workspace *workspace) {
 			int key = GetCharPressed();
 			while (key) {
 				if ((key >= 32) && (key <= 125)) {
-					workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE));
+					workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE, BLACK));
 					ctx.cursor.x++;
 					if (ctx.is_saved)
 						ctx.is_saved = false;

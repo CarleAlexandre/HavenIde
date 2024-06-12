@@ -50,8 +50,7 @@ typedef struct s_glyph {
 typedef struct s_file_header{
 	Vector2 dim;
 	std::vector<std::list<t_glyph*>> glyphs;
-	std::string name;
-	std::string raw;
+	char *name;
 }t_file_header;
 
 typedef struct s_terminal {
