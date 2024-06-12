@@ -60,7 +60,6 @@ t_file_header *loadFileRW(const char *filepath) {
 		new_file->glyphs.push_back(loadGlyphLine(&span[i], &new_file->dim.x, &i));
 		new_file->dim.y++;
 	}
-	printf("file: %s; size:%f ;\n", filepath, new_file->dim.y);
 	free(data);
 	return (new_file);
 };
@@ -122,7 +121,7 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 	return (workspace);
 }
 
-void ControlBar(t_workspace *workspace) {
+int ControlBar(t_workspace *workspace) {
 	static int status_bar_show = 0;
 
 	GuiDrawRectangle((Rectangle){0, 0, (float)GetScreenWidth(), 20}, 1, GREEN, BLACK);
@@ -146,6 +145,9 @@ void ControlBar(t_workspace *workspace) {
 		}
 	}
 
+	if (GuiButton({(float)GetScreenWidth() - 20, 0, 20, 20}, "X")) return(-1);
+	if (GuiButton({(float)GetScreenWidth() - 40, 0, 20, 20}, "||")) IsWindowMaximized() ? RestoreWindow() : MaximizeWindow();
+	if (GuiButton({(float)GetScreenWidth() - 60, 0, 20, 20}, ".")) IsWindowMinimized() ? RestoreWindow() : MinimizeWindow();
 	/*
 		file
 		edit
@@ -169,6 +171,7 @@ void ControlBar(t_workspace *workspace) {
 		}
 		default:break;
 	}
+	return (1);
 }
 
 void saveTheFile(t_file_header file) {
@@ -288,7 +291,7 @@ void editorInput(t_workspace *workspace) {
 			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
 		}
 		if (ctx.mode == normal) {
-			if (IsKeyPressed(KEY_I)) {
+			if (IsKeyPressed(KEY_I) && !ctx.term.open) {
 				ctx.mode = insert;
 				GetKeyPressed();
 			}
@@ -376,6 +379,7 @@ void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 int View(t_workspace *workspace){
 	static float sep1 = 200;
 	float height, width;
+	int ret = 1;
 
 	height = GetScreenHeight();
 	width = GetScreenWidth();
@@ -392,9 +396,9 @@ int View(t_workspace *workspace){
 		if (ctx.term.open == true) {
 			TerminalIn(workspace, {sep1, 20, width - sep1 - 30, 20});
 		}
-		ControlBar(workspace);
+		ret = ControlBar(workspace);
 	EndDrawing();
-	return (1);
+	return (ret);
 }
 
 int main(int ac, char **av) {
@@ -432,8 +436,12 @@ int main(int ac, char **av) {
 		workspace = loadWorkspace(av[1]);
 	}
 
+	SetExitKey(0);
+
+	bool shouldClose = false;
+
 	SetTargetFPS(240);
-	while (!WindowShouldClose()) {
+	while (!shouldClose) {
 		switch (step) {
 			case (start): {
 				BeginDrawing();
@@ -461,7 +469,14 @@ int main(int ac, char **av) {
 				step = View(&workspace);
 				break;
 			}
+			case (close): {
+				shouldClose = true;
+				break;
+			}
 			default:break;
+		}
+		if (WindowShouldClose()) {
+			shouldClose = true;
 		}
 	}
 	CloseWindow();

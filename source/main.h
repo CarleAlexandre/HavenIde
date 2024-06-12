@@ -16,6 +16,7 @@ typedef struct s_monitor {
 }t_monitor;
 
 typedef enum {
+	close = -1,
 	start = 0,
 	stdview = 1,
 } step_e;
