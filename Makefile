@@ -1,4 +1,5 @@
-NAME		=	HavenIde
+NAME		=	HavenIde_debug
+RELEASE		=	HavenIde
 
 BUILDDIR	=	build/
 
@@ -35,12 +36,17 @@ $(BUILDDIR)$(NAME): $(OBJ) $(DEPS)
 		mkdir -p $(BUILDDIR)
 		$(CC) $(OBJ) ${RAYLIB} ${LIBS} -o $@
 
-#add this above after lib to have no console: <-mwindows -Wl,--subsystem,windows>
+$(BUILDDIR)$(RELEASE): $(OBJ) $(DEPS)
+		make -C HavenLib
+		mkdir -p $(BUILDDIR)
+		$(CC) $(OBJ) ${RAYLIB} -mwindows -Wl,--subsystem,windows ${LIBS} -o $@
 
 $(OBJ):		%.o :	%.cpp $(DEPS)
 		$(CC) $(CFLAGS) ${INCLUDE} -c $< -o $@
 
 all		:	$(BUILDDIR)$(NAME)
+
+release	:	$(BUILDDIR)$(RELEASE)
 
 clean		:
 		rm -rf $(OBJ)

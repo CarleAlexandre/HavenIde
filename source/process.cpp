@@ -2,6 +2,7 @@
 # include <stdio.h>
 # include <psapi.h>
 # include <queue>
+# include <iostream>
 # include <cassert>
 
 //int checkProcess(DWORD pid) {
@@ -28,21 +29,11 @@
 //	return (ret_value);
 //}
 
-#ifdef _WIN32
-unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
+int createChildP(char *cmd, HANDLE &wrPipe, PROCESS_INFORMATION &pInfo) {
 	STARTUPINFO  sInfo;
-	PROCESS_INFORMATION pInfo;
-	LPDWORD lpExitCode;
-	char buff;
 
 	ZeroMemory(&pInfo,  sizeof(PROCESS_INFORMATION));
 	ZeroMemory(&sInfo,  sizeof(STARTUPINFO));
-
-	HANDLE rdPipe, wrPipe;
-	if (!CreatePipe(&rdPipe, &wrPipe, NULL, 4096)) {
-		abort();
-	}
-
 	sInfo.cb = sizeof(STARTUPINFO);
 	sInfo.hStdOutput = wrPipe;
 	sInfo.hStdError = wrPipe;
@@ -54,32 +45,56 @@ unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
 	NULL, 
 	NULL, 
 	true, 
-	NORMAL_PRIORITY_CLASS | CREATE_PROTECTED_PROCESS | CREATE_NO_WINDOW, 
+	0, 
 	NULL, 
 	NULL, 
 	&sInfo, 
 	&pInfo);
 
-	assert(create_proc);
-	CloseHandle(&sInfo);
-	CloseHandle(&pInfo);
+	if (!create_proc) {
+        std::cerr << "CreateProcess failed" << std::endl;
+        return (-1);
+    }
 	CloseHandle(wrPipe);
+	return (1);
+}
 
-	bool bRead;
-	DWORD dwRead;
+#ifdef _WIN32
+unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size) {
+	HANDLE rdPipe = 0x00, wrPipe = 0x00;
+	SECURITY_ATTRIBUTES saAttr = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
 
-	int x = 0;
-	for (;;) {
-		bRead = ReadFile(rdPipe, &buff, 1, &dwRead, NULL);
-		if (!bRead || !dwRead) break;
-		if (x > max_size) {
-			out->pop();
-		} else {
-			x++;
-		}
-		out->push(buff);
+	assert(CreatePipe(&rdPipe, &wrPipe, &saAttr, 4096));
+	assert(SetHandleInformation(rdPipe, HANDLE_FLAG_INHERIT, 0));
+
+	PROCESS_INFORMATION pInfo;
+	if (!createChildP(cmd, wrPipe, pInfo)){
+		CloseHandle(rdPipe);
+		CloseHandle(wrPipe);
+		return (-1);
 	}
 
+	bool bRead = false;
+	DWORD dwRead;
+	CHAR buff[4096];
+
+	for (;;) {
+		bRead = ReadFile(rdPipe, buff, sizeof(buff) - 1, &dwRead, NULL);
+		if (!bRead || dwRead == 0) break;
+
+		buff[dwRead] = '\0';
+		for (int i = 0; buff[i];i++) {
+			out.push(buff[i]);
+		}
+	}
+
+	WaitForSingleObject(pInfo.hProcess, INFINITE);
+
+	CloseHandle(&pInfo.hProcess);
+	CloseHandle(&pInfo.hThread);
+	CloseHandle(rdPipe);
+
+	LPDWORD lpExitCode;
 	GetExitCodeProcess(&pInfo, lpExitCode);
 	return (*lpExitCode);
 }

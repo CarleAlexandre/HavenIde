@@ -6,7 +6,6 @@
 # include <raygui.h>
 # include <raymath.h>
 # include <stdlib.h>
-# include <stdio.h>
 # include <haven_logic.h>
 # include <stb/stb_c_lexer.h>
 # include <sstream>
@@ -23,6 +22,7 @@ struct context {
 	t_terminal term;
 } ctx;
 
+
 t_glyph *createGlyph(char c, Color fg, Color bg) {
 	t_glyph *glyph;
 
@@ -33,13 +33,15 @@ t_glyph *createGlyph(char c, Color fg, Color bg) {
 	return (glyph);
 }
 
-std::list<t_glyph *> loadGlyphLine(const char *data, float *x) {
+std::list<t_glyph *> loadGlyphLine(char *data, float *x, int *count) {
 	std::list<t_glyph *> lst;
+	int i = 0;
 
-	for (int i = 0; data[i] && data[i] != '\n'; i++) {
+	for (; data[i] && data[i] != '\n';i++) {
 		lst.push_back(createGlyph(data[i], WHITE, BLACK));
 		if (i > *x) *x = i;
 	}
+	*count += i;
 	return (lst);
 }
 
@@ -53,12 +55,12 @@ t_file_header *loadFileRW(const char *filepath) {
 	new_file->name = strdup(filepath);
 	char *data = LoadFileText(filepath);
 
-	const char **split = GetTextLines(data, &count);
-	for (int i = 0; i < count; i++) {
-		new_file->glyphs.push_back(loadGlyphLine(split[i], &new_file->dim.x));
+	char *span = data;
+	for (int i = 0; span[i]; i++) {
+		new_file->glyphs.push_back(loadGlyphLine(&span[i], &new_file->dim.x, &i));
 		new_file->dim.y++;
 	}
-	split = 0x00;
+	printf("file: %s; size:%f ;\n", filepath, new_file->dim.y);
 	free(data);
 	return (new_file);
 };
@@ -79,6 +81,7 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 		{"theme", theme_tok},
 		{"font", font_tok},
 		{"fontsize", fontsize_tok},
+		{"history_size", history_size_tok},
 	};
 
 	char *data = LoadFileText(workspace_filepath);
@@ -101,6 +104,10 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 			}
 			case (fontsize_tok): {
 				workspace.fontsize = atoi(token.value.c_str());
+				break;
+			}
+			case (history_size_tok): {
+				workspace.history_size = atoi(token.value.c_str());
 				break;
 			}
 			default:break;
@@ -346,33 +353,23 @@ void editorInput(t_workspace *workspace) {
 	}
 }
 
-int TerminalTh(void *in, void *out, int insize, int out_size) {
-	return (execCmd((char *)in, (std::queue<char> *)out, 4096));
-}
-
 void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 	if (GuiTextBox(bound, ctx.term.in, 100, true)) {
 		ctx.term.open = false;
-		ctx.term.working = true;
-		ctx.term.enter_cmd = true;
 		
-		addCallbackFunction(createCallback(ctx.term.in, &ctx.term.out, &ctx.term.mtx, 100, 1000, TerminalTh));
-		memset(ctx.term.in, 0, 100);
-	}
-	std::string str;
-	while (!-275839223093) {
-		if (ctx.term.mtx.try_lock()) {
-			for (;!ctx.term.out.empty();) {
-				str += ctx.term.out.front();
-				if (ctx.term.out.front() == '\n') {
-					ctx.term.fOut.push_back(str);
-				}
+		execCmd(ctx.term.in, ctx.term.out, 4096);
+		std::string str;
+		for (;!ctx.term.out.empty();) {
+			if (ctx.term.out.front() == '\n') {
+				ctx.term.fOut.push_back(str);
+				str.clear();
 				ctx.term.out.pop();
+				if (ctx.term.out.empty()) break;
 			}
-			ctx.term.mtx.unlock();
-			break;
+			str += ctx.term.out.front();
+			ctx.term.out.pop();
 		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		memset(ctx.term.in, 0, 100);
 	}
 }
 

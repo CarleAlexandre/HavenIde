@@ -39,6 +39,7 @@ typedef enum {
 	theme_tok = 2,
 	font_tok = 3,
 	fontsize_tok = 4,
+	history_size_tok = 5,
 }workspace_token_e;
 
 typedef struct s_glyph {
@@ -56,11 +57,9 @@ typedef struct s_file_header{
 typedef struct s_terminal {
 	char in[100];
 	std::queue<char> out;
-	std::vector<std::string> fOut;
+	std::list<std::string> fOut;
 	std::mutex mtx;
 	bool open = false;
-	bool enter_cmd = false;
-	bool working = false;
 } t_terminal;
 
 typedef struct s_workspace {
@@ -69,6 +68,7 @@ typedef struct s_workspace {
 	std::string theme;
 	std::string font;
 	u32 fontsize;
+	u32 history_size;
 } t_workspace;
 
-unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size);
+unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size);
