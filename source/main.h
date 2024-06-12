@@ -53,6 +53,8 @@ typedef struct s_file_header{
 	Vector2 dim;
 	std::vector<std::list<t_glyph*>> glyphs;
 	char *name;
+	Vector2 cursor;
+	bool is_saved = true;
 }t_file_header;
 
 typedef struct s_terminal {
@@ -72,4 +74,4 @@ typedef struct s_workspace {
 	u32 history_size;
 } t_workspace;
 
-unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size);
+bool execCmd(char *cmd, std::queue<char> &out, int max_size);

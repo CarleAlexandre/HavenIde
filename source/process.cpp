@@ -29,8 +29,32 @@
 //	return (ret_value);
 //}
 
-int createChildP(char *cmd, HANDLE &wrPipe, PROCESS_INFORMATION &pInfo) {
+#ifdef _WIN32
+void cleanupP(HANDLE *rdPipe, HANDLE *wrPipe, PROCESS_INFORMATION *pInfo) {
+    if (rdPipe != NULL) {
+        CloseHandle(rdPipe);
+        rdPipe = NULL;
+    }
+
+    if (wrPipe != NULL) {
+        CloseHandle(wrPipe);
+        wrPipe = NULL;
+    }
+
+    if (pInfo->hProcess != NULL) {
+        CloseHandle(pInfo->hProcess);
+        pInfo->hProcess = NULL;
+    }
+
+    if (pInfo->hThread != NULL) {
+        CloseHandle(pInfo->hThread);
+        pInfo->hThread = NULL;
+    }
+}
+
+bool createChildP(char *cmd, HANDLE &wrPipe, PROCESS_INFORMATION &pInfo) {
 	STARTUPINFO  sInfo;
+	bool create_proc = false;
 
 	ZeroMemory(&pInfo,  sizeof(PROCESS_INFORMATION));
 	ZeroMemory(&sInfo,  sizeof(STARTUPINFO));
@@ -39,7 +63,7 @@ int createChildP(char *cmd, HANDLE &wrPipe, PROCESS_INFORMATION &pInfo) {
 	sInfo.hStdError = wrPipe;
 	sInfo.dwFlags |= STARTF_USESTDHANDLES;
 
-	bool create_proc = CreateProcessA(
+	create_proc = CreateProcessA(
 	NULL, 
 	cmd, 
 	NULL, 
@@ -53,14 +77,12 @@ int createChildP(char *cmd, HANDLE &wrPipe, PROCESS_INFORMATION &pInfo) {
 
 	if (!create_proc) {
         std::cerr << "CreateProcess failed" << std::endl;
-        return (-1);
+        return (false);
     }
-	CloseHandle(wrPipe);
-	return (1);
+	return (true);
 }
 
-#ifdef _WIN32
-unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size) {
+bool execCmd(char *cmd, std::queue<char> &out, int max_size) {
 	HANDLE rdPipe = 0x00, wrPipe = 0x00;
 	SECURITY_ATTRIBUTES saAttr = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
 
@@ -68,11 +90,15 @@ unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size) {
 	assert(SetHandleInformation(rdPipe, HANDLE_FLAG_INHERIT, 0));
 
 	PROCESS_INFORMATION pInfo;
-	if (!createChildP(cmd, wrPipe, pInfo)){
-		CloseHandle(rdPipe);
-		CloseHandle(wrPipe);
-		return (-1);
+	bool create_proc = false;
+	create_proc = createChildP(cmd, wrPipe, pInfo);
+	if (!create_proc) {
+		cleanupP(&rdPipe, &wrPipe, &pInfo);
+		return false;
 	}
+
+	CloseHandle(wrPipe);
+	wrPipe = NULL;
 
 	bool bRead = false;
 	DWORD dwRead;
@@ -83,6 +109,7 @@ unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size) {
 		if (!bRead || dwRead == 0) break;
 
 		buff[dwRead] = '\0';
+		std::cout << buff << std::endl;
 		for (int i = 0; buff[i];i++) {
 			out.push(buff[i]);
 		}
@@ -90,13 +117,8 @@ unsigned long execCmd(char *cmd, std::queue<char> &out, int max_size) {
 
 	WaitForSingleObject(pInfo.hProcess, INFINITE);
 
-	CloseHandle(&pInfo.hProcess);
-	CloseHandle(&pInfo.hThread);
-	CloseHandle(rdPipe);
-
-	LPDWORD lpExitCode;
-	GetExitCodeProcess(&pInfo, lpExitCode);
-	return (*lpExitCode);
+	cleanupP(&rdPipe, &wrPipe, &pInfo);
+	return true;
 }
 #elif 
 

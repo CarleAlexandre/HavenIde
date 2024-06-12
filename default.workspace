@@ -3,7 +3,7 @@ source/main.h
 source/process.cpp
 ylt.txt
 Makefile,
-theme:default,
-font:default,
-fontsize:8,
+theme:terminal,
+font:firacode,
+fontsize:16,
 history_size:1000,

@@ -12,16 +12,13 @@
 # include <haven_thread.hpp>
 
 struct context {
-	t_workspace workspace;
 	int current_file = 0;
-	Vector2 cursor = {};
-	bool is_saved = true;
 	Rectangle terminal_bound;
 	Rectangle texteditor_bound;
 	vi_mod mode;
 	t_terminal term;
+	Font font;
 } ctx;
-
 
 t_glyph *createGlyph(char c, Color fg, Color bg) {
 	t_glyph *glyph;
@@ -123,6 +120,9 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 
 int ControlBar(t_workspace *workspace) {
 	static int status_bar_show = 0;
+	int scwidth;
+
+	scwidth = GetScreenWidth();
 
 	GuiDrawRectangle((Rectangle){0, 0, (float)GetScreenWidth(), 20}, 1, GREEN, BLACK);
 	if (GuiButton((Rectangle){0, 0, 60 , 20}, "file")) {
@@ -145,9 +145,9 @@ int ControlBar(t_workspace *workspace) {
 		}
 	}
 
-	if (GuiButton({(float)GetScreenWidth() - 20, 0, 20, 20}, "X")) return(-1);
-	if (GuiButton({(float)GetScreenWidth() - 40, 0, 20, 20}, "||")) IsWindowMaximized() ? RestoreWindow() : MaximizeWindow();
-	if (GuiButton({(float)GetScreenWidth() - 60, 0, 20, 20}, ".")) IsWindowMinimized() ? RestoreWindow() : MinimizeWindow();
+	if (GuiButton({(float)scwidth - 20, 0, 20, 20}, "X")) return(-1);
+	if (GuiButton({(float)scwidth - 40, 0, 20, 20}, "||")) IsWindowMaximized() ? RestoreWindow() : MaximizeWindow();
+	if (GuiButton({(float)scwidth - 60, 0, 20, 20}, ".")) IsWindowMinimized() ? RestoreWindow() : MinimizeWindow();
 	/*
 		file
 		edit
@@ -158,8 +158,10 @@ int ControlBar(t_workspace *workspace) {
 	switch (status_bar_show) {
 		case(show_file): {
 			//new_file
+			//load_file
 			//save_file
-			//save_files
+			//edit_workspace
+			//
 
 			break;
 		}
@@ -195,31 +197,31 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 
 	if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), bound)) {
 		Vector2 mouse_pos = GetMousePosition();
-		ctx.cursor.x = floor((mouse_pos.x - 40 - ctx.texteditor_bound.x - scroll.x) / (workspace->fontsize));
-		ctx.cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
-		ctx.cursor.y = clamp(ctx.cursor.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
-		ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
+		workspace->files[ctx.current_file]->cursor.x = floor((mouse_pos.x - 40 - ctx.texteditor_bound.x - scroll.x) / (workspace->fontsize));
+		workspace->files[ctx.current_file]->cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
+		workspace->files[ctx.current_file]->cursor.y = clamp(workspace->files[ctx.current_file]->cursor.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
+		workspace->files[ctx.current_file]->cursor.x = clamp(workspace->files[ctx.current_file]->cursor.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size());
 	}
 
-	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name, (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * workspace->fontsize + 30, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
+	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name, (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * (float)(workspace->fontsize * 0.5) + 60, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
 	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
 	BeginScissorMode(view.x, view. y, view. width, view. height);
-	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 30, view.height - 1}, 1, WHITE, BLACK);
+	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
 		std::list<t_glyph *> &line = workspace->files[ctx.current_file]->glyphs[y];
 		if (!line.empty()) {
 			int x = 0;
 			for (auto tmp : line) {
 				char character[2] = {tmp->c, '\0'};
-				DrawText(character, 40 + bound.x + scroll.x + x * workspace->fontsize, bound.y + 30 + scroll.y + y * (workspace->fontsize * 1.5), workspace->fontsize, tmp->fg);
+				DrawTextEx(ctx.font, character, {60 + bound.x + scroll.x + x * (float)(workspace->fontsize * 0.5), bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)}, workspace->fontsize, 0, tmp->fg);
 				x++;
 			}
 		}
-		DrawText(TextFormat(" %5i ", y + 1), bound.x, bound.y + 30 + scroll.y + y * (workspace->fontsize * 1.5), workspace->fontsize, WHITE);
+		DrawTextEx(ctx.font, TextFormat(" %5i ", y + 1), {bound.x, bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)}, workspace->fontsize, 0, WHITE);
 	}
-	DrawRectangleLines(40 + bound.x + scroll.x + ctx.cursor.x * workspace->fontsize, bound.y + 30 + scroll.y + ctx.cursor.y * (workspace->fontsize * 1.5) + workspace->fontsize * 0.5, workspace->fontsize, workspace->fontsize * 0.5, RED);
+	DrawRectangleLines(60 + bound.x + scroll.x + workspace->files[ctx.current_file]->cursor.x * (workspace->fontsize * 0.5), bound.y + 30 + scroll.y + workspace->files[ctx.current_file]->cursor.y * (workspace->fontsize * 1.5), workspace->fontsize * 0.5, workspace->fontsize, GREEN);
 	EndScissorMode();
-	if (ctx.is_saved) {
+	if (workspace->files[ctx.current_file]->is_saved) {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, BLUE);
 	} else {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, RED);
@@ -236,11 +238,11 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 			maxX = str.size();
 		}
 	}
-	GuiScrollPanel(bound, "Terminal:", (Rectangle){0, 0, (float)maxX * (workspace->fontsize), (float)(ctx.term.fOut.size() * (workspace->fontsize * 1.5))}, &scroll, &view);
+	GuiScrollPanel(bound, "Terminal:", (Rectangle){0, 0, (float)maxX * (workspace->fontsize) + 20, (float)(ctx.term.fOut.size() * (workspace->fontsize * 1.5) + 40)}, &scroll, &view);
 	BeginScissorMode(view.x, view.y, view.width, view.height);
 	int y = 0;
 	for (auto str : ctx.term.fOut) {
-		DrawText(str.c_str(), bound.x, bound.y + y * (workspace->fontsize * 1.5), workspace->fontsize, GREEN);
+		DrawTextEx(ctx.font, str.c_str(), {bound.x + scroll.x + 10, bound.y + y * (float)(workspace->fontsize * 1.5) + scroll.y + 40}, workspace->fontsize, 0, GREEN);
 		y++;
 	}
 	EndScissorMode();
@@ -248,12 +250,12 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 
 void editorInput(t_workspace *workspace) {
 	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound)) {
-		auto insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
-		std::advance(insert_place, ctx.cursor.x);
+		auto insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].begin();
+		std::advance(insert_place, workspace->files[ctx.current_file]->cursor.x);
 		if (IsKeyDown(KEY_LEFT_CONTROL)){
-			if (IsKeyPressed(KEY_S) && !ctx.is_saved) {
+			if (IsKeyPressed(KEY_S) && !workspace->files[ctx.current_file]->is_saved) {
 				saveTheFile(*workspace->files[ctx.current_file]);
-				ctx.is_saved = true;
+				workspace->files[ctx.current_file]->is_saved = true;
 			}
 			if ((IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H)) && ctx.current_file) {
 				ctx.current_file--;
@@ -266,29 +268,29 @@ void editorInput(t_workspace *workspace) {
 				ctx.term.open = true;
 			}
 		}
-		if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H) && ctx.mode == normal) {
-			if (ctx.cursor.x > 0) {
-				ctx.cursor.x--;
-			} else if (ctx.cursor.y > 0){
-				ctx.cursor.y--;
-				ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size();
+		if (IsKeyPressed(KEY_LEFT) || (IsKeyPressed(KEY_H) && ctx.mode == normal && !ctx.term.open)) {
+			if (workspace->files[ctx.current_file]->cursor.x > 0) {
+				workspace->files[ctx.current_file]->cursor.x--;
+			} else if (workspace->files[ctx.current_file]->cursor.y > 0){
+				workspace->files[ctx.current_file]->cursor.y--;
+				workspace->files[ctx.current_file]->cursor.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size();
 			}
 		}
-		if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_L) && ctx.mode == normal) {
-			if (ctx.cursor.x < workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size()) {
-				ctx.cursor.x++;
-			} else if (ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
-				ctx.cursor.y++;
-				ctx.cursor.x = 0;
+		if (IsKeyPressed(KEY_RIGHT) || (IsKeyPressed(KEY_L) && ctx.mode == normal && !ctx.term.open)) {
+			if (workspace->files[ctx.current_file]->cursor.x < workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size()) {
+				workspace->files[ctx.current_file]->cursor.x++;
+			} else if (workspace->files[ctx.current_file]->cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
+				workspace->files[ctx.current_file]->cursor.y++;
+				workspace->files[ctx.current_file]->cursor.x = 0;
 			}
 		}
-		if ((IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_J) && ctx.mode == normal) && ctx.cursor.y > 0) {
-			ctx.cursor.y--;
-			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
+		if ((IsKeyPressed(KEY_UP) || (IsKeyPressed(KEY_J) && ctx.mode == normal && !ctx.term.open)) && workspace->files[ctx.current_file]->cursor.y > 0) {
+			workspace->files[ctx.current_file]->cursor.y--;
+			workspace->files[ctx.current_file]->cursor.x = clamp(workspace->files[ctx.current_file]->cursor.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size());
 		}
-		if ((IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_K) && ctx.mode == normal) && ctx.cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
-			ctx.cursor.y++;
-			ctx.cursor.x = clamp(ctx.cursor.x, 0, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].size());
+		if ((IsKeyPressed(KEY_DOWN) || (IsKeyPressed(KEY_K) && ctx.mode == normal && !ctx.term.open)) && workspace->files[ctx.current_file]->cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
+			workspace->files[ctx.current_file]->cursor.y++;
+			workspace->files[ctx.current_file]->cursor.x = clamp(workspace->files[ctx.current_file]->cursor.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size());
 		}
 		if (ctx.mode == normal) {
 			if (IsKeyPressed(KEY_I) && !ctx.term.open) {
@@ -303,52 +305,52 @@ void editorInput(t_workspace *workspace) {
 
 		if (ctx.mode == insert) {
 			if (IsKeyPressed(KEY_BACKSPACE)) {
-				if (ctx.cursor.x) {
-					ctx.cursor.x--;
-					insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].erase(--insert_place);
-					if (ctx.is_saved)
-						ctx.is_saved = false;
-				} else if (ctx.cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].empty()) {
-					workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y - 1);
+				if (workspace->files[ctx.current_file]->cursor.x) {
+					workspace->files[ctx.current_file]->cursor.x--;
+					insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].erase(--insert_place);
+					if (workspace->files[ctx.current_file]->is_saved)
+						workspace->files[ctx.current_file]->is_saved = false;
+				} else if (workspace->files[ctx.current_file]->cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y - 1].empty()) {
+					workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y - 1);
 					workspace->files[ctx.current_file]->dim.y--;
-					ctx.cursor.y--;
-					ctx.cursor.x = 0;
-					if (ctx.is_saved)
-						ctx.is_saved = false;
-				} else if (ctx.cursor.y >= 1) {
+					workspace->files[ctx.current_file]->cursor.y--;
+					workspace->files[ctx.current_file]->cursor.x = 0;
+					if (workspace->files[ctx.current_file]->is_saved)
+						workspace->files[ctx.current_file]->is_saved = false;
+				} else if (workspace->files[ctx.current_file]->cursor.y >= 1) {
 					workspace->files[ctx.current_file]->dim.y--;
-					ctx.cursor.x = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y - 1].size();
-					ctx.cursor.y--;
-					workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].splice(workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y + 1]);
-					workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y + 1);
-					if (ctx.is_saved)
-						ctx.is_saved = false;
+					workspace->files[ctx.current_file]->cursor.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y - 1].size();
+					workspace->files[ctx.current_file]->cursor.y--;
+					workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].splice(workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].end(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y + 1]);
+					workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y + 1);
+					if (workspace->files[ctx.current_file]->is_saved)
+						workspace->files[ctx.current_file]->is_saved = false;
 				}
 			}
 			if (IsKeyPressed(KEY_ENTER)) {
 				std::list<t_glyph *> lst = {};
-				lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[ctx.cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].end());
-				ctx.cursor.y++;
-				workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + ctx.cursor.y, lst);
-				ctx.cursor.x = 0;
+				lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].end());
+				workspace->files[ctx.current_file]->cursor.y++;
+				workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y, lst);
+				workspace->files[ctx.current_file]->cursor.x = 0;
 				workspace->files[ctx.current_file]->dim.y++;
-				insert_place = workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].begin();
-				if (ctx.is_saved)
-					ctx.is_saved = false;
+				insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].begin();
+				if (workspace->files[ctx.current_file]->is_saved)
+					workspace->files[ctx.current_file]->is_saved = false;
 			}
 			if (IsKeyPressed(KEY_TAB)) {
-				workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph('\t', WHITE, BLACK));
-				ctx.cursor.x++;
-				if (ctx.is_saved)
-					ctx.is_saved = false;
+				workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].emplace(insert_place++, createGlyph('\t', WHITE, BLACK));
+				workspace->files[ctx.current_file]->cursor.x++;
+				if (workspace->files[ctx.current_file]->is_saved)
+					workspace->files[ctx.current_file]->is_saved = false;
 			}
 			int key = GetCharPressed();
 			while (key) {
 				if ((key >= 32) && (key <= 125)) {
-					workspace->files[ctx.current_file]->glyphs[ctx.cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE, BLACK));
-					ctx.cursor.x++;
-					if (ctx.is_saved)
-						ctx.is_saved = false;
+					workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE, BLACK));
+					workspace->files[ctx.current_file]->cursor.x++;
+					if (workspace->files[ctx.current_file]->is_saved)
+						workspace->files[ctx.current_file]->is_saved = false;
 				}
 				key = GetCharPressed();
 			}
@@ -359,25 +361,27 @@ void editorInput(t_workspace *workspace) {
 void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 	if (GuiTextBox(bound, ctx.term.in, 100, true)) {
 		ctx.term.open = false;
-		
-		execCmd(ctx.term.in, ctx.term.out, 4096);
-		std::string str;
-		for (;!ctx.term.out.empty();) {
-			if (ctx.term.out.front() == '\n') {
-				ctx.term.fOut.push_back(str);
-				str.clear();
+		if (execCmd(ctx.term.in, ctx.term.out, 4096)) {
+			std::string str;
+			for (;!ctx.term.out.empty();) {
+				if (ctx.term.out.front() == '\n') {
+					ctx.term.fOut.push_back(str);
+					str.clear();
+					ctx.term.out.pop();
+					if (ctx.term.out.empty()) break;
+				}
+				str += ctx.term.out.front();
 				ctx.term.out.pop();
-				if (ctx.term.out.empty()) break;
 			}
-			str += ctx.term.out.front();
-			ctx.term.out.pop();
+			memset(ctx.term.in, 0, 100);
+			return;
 		}
-		memset(ctx.term.in, 0, 100);
+		ctx.term.fOut.push_back(std::string(TextFormat("Unknow Command: %s", ctx.term.in)));
 	}
 }
 
 int View(t_workspace *workspace){
-	static float sep1 = 200;
+	static float sep1 = 400;
 	float height, width;
 	int ret = 1;
 
@@ -412,9 +416,9 @@ int main(int ac, char **av) {
 	startThreadPool(&join_sync);
 
 	InitWindow(400, 400, "HavenIde");
+	SetExitKey(0);
 
 	monitor_count = GetMonitorCount();
-
 	t_monitor *displays = (t_monitor *)malloc(monitor_count * sizeof(t_monitor));
 	if (!displays) {
 		printf("ABORT()\n");
@@ -428,19 +432,20 @@ int main(int ac, char **av) {
 		printf("refresh rate: %i, width: %i, height: %i, id: %i\n", displays[i].refresh_rate, displays[i].width, displays[i].height, i);
 	}
 
-	GuiLoadStyle(TextFormat("%s/../include/styles/terminal/style_terminal.rgs", GetApplicationDirectory()));
-
 	if (ac <= 1) {
 		workspace = loadWorkspace("default.workspace");
 	} else {
 		workspace = loadWorkspace(av[1]);
 	}
 
-	SetExitKey(0);
+	GuiLoadStyle(TextFormat("include/styles/%s/style_%s.rgs", workspace.theme.c_str(), workspace.theme.c_str()));
+
+	ctx.font = LoadFont(TextFormat("assets/font/%s.ttf", workspace.font.c_str()));
+	GuiSetFont(ctx.font);
+
+	SetTargetFPS(120);
 
 	bool shouldClose = false;
-
-	SetTargetFPS(240);
 	while (!shouldClose) {
 		switch (step) {
 			case (start): {
@@ -479,6 +484,7 @@ int main(int ac, char **av) {
 			shouldClose = true;
 		}
 	}
+	UnloadFont(ctx.font);
 	CloseWindow();
 	endThreadPool(&join_sync);
 	return (0);
