@@ -6,9 +6,5 @@
 *.exe
 *.d
 
-build/*
 .cache/*
 .vs
-
-assets/*
-remedybg.exe

@@ -208,7 +208,6 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name, (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * (float)(workspace->fontsize * 0.5) + 60, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
 	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
 	BeginScissorMode(view.x, view. y, view. width, view. height);
-	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
 		std::list<t_glyph *> &line = workspace->files[ctx.current_file]->glyphs[y];
 		if (!line.empty()) {
@@ -219,6 +218,9 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 				x++;
 			}
 		}
+	}
+	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
+	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
 		DrawTextEx(ctx.font, TextFormat(" %5i ", y + 1), {bound.x, bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)}, workspace->fontsize, 0, WHITE);
 	}
 	DrawRectangleLines(60 + bound.x + scroll.x + workspace->files[ctx.current_file]->cursor.x * (workspace->fontsize * 0.5), bound.y + 30 + scroll.y + workspace->files[ctx.current_file]->cursor.y * (workspace->fontsize * 1.5), workspace->fontsize * 0.5, workspace->fontsize, GREEN);
@@ -435,15 +437,13 @@ int main(int ac, char **av) {
 		printf("refresh rate: %i, width: %i, height: %i, id: %i\n", displays[i].refresh_rate, displays[i].width, displays[i].height, i);
 	}
 
-	if (ac <= 1) {
-		workspace = loadWorkspace("default.workspace");
-	} else {
-		workspace = loadWorkspace(av[1]);
-	}
+	const char * appdir = GetApplicationDirectory();
 
-	GuiLoadStyle(TextFormat("include/styles/%s/style_%s.rgs", workspace.theme.c_str(), workspace.theme.c_str()));
+	workspace = loadWorkspace(TextFormat("%s/workspace/default.workspace", appdir));
 
-	ctx.font = LoadFont(TextFormat("assets/font/%s.ttf", workspace.font.c_str()));
+	GuiLoadStyle(TextFormat("%s/assets/styles/style_%s.rgs", appdir, workspace.theme.c_str()));
+
+	ctx.font = LoadFont(TextFormat("%s/assets/font/%s.ttf", appdir, workspace.font.c_str()));
 	GuiSetFont(ctx.font);
 
 	SetTargetFPS(120);

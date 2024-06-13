@@ -1,7 +1,7 @@
-NAME		=	HavenIde_debug
-RELEASE		=	HavenIde
+NAME		=	debug.exe
+RELEASE		=	HavenIde.exe
 
-BUILDDIR	=	build/
+BUILDDIR	=	bin/
 
 CC			=	gcc
 
@@ -44,14 +44,17 @@ $(BUILDDIR)$(RELEASE): $(OBJ) $(DEPS)
 $(OBJ):		%.o :	%.cpp $(DEPS)
 		$(CC) $(CFLAGS) ${INCLUDE} -c $< -o $@
 
-all		:	$(BUILDDIR)$(NAME)
+all		:	debug release
+
+debug	:	$(BUILDDIR)$(NAME)
 
 release	:	$(BUILDDIR)$(RELEASE)
 
 clean		:
-		rm -rf $(OBJ)
+		rm $(OBJ)
 
 fclean		:	clean
-		rm -rf $(BUILDDIR)
+		rm -f $(BUILDDIR)$(NAME)
+		rm -f $(BUILDDIR)$(RELEASE)
 
 re		:	fclean all
