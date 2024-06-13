@@ -49,6 +49,11 @@ typedef struct s_glyph {
 	Color bg;
 } t_glyph;
 
+typedef struct s_file_raw {
+	char *raw;
+	char **lines;
+} t_file_raw;
+
 typedef struct s_file_header{
 	Vector2 dim;
 	std::vector<std::list<t_glyph*>> glyphs;
@@ -73,5 +78,23 @@ typedef struct s_workspace {
 	u32 fontsize;
 	u32 history_size;
 } t_workspace;
+
+typedef enum {
+	c_ext = 1,
+	cpp_ext = 2,
+	markdown_ext = 3,
+} extension_enum;
+
+#define INPUT_TIME 0.075
+
+static std::unordered_map<std::string, int> extension_dictionnary{
+	{"c", c_ext},
+	{"h", c_ext},
+	{"cpp", cpp_ext},
+	{"cc", cpp_ext},
+	{"hh", cpp_ext},
+	{"hpp", cpp_ext},
+	{"md", markdown_ext},
+};
 
 bool execCmd(char *cmd, std::queue<char> &out, int max_size);
