@@ -36,30 +36,39 @@ typedef enum {
 } vi_mod;
 
 typedef enum {
-	path_tok = 1,
-	theme_tok = 2,
-	font_tok = 3,
-	fontsize_tok = 4,
-	history_size_tok = 5,
-}workspace_token_e;
+	box_cursor = 1,
+	half_box_cursor = 2,
+	underscore_cursor = 3,
+	pipe_cursor = 4,
+} style_cursor_e;
 
 typedef struct s_glyph {
-	char c;
+	int codepoint;
+	int spacing;//number of space beffore next char
 	Color fg;
-	Color bg;
 } t_glyph;
 
-typedef struct s_file_raw {
-	char *raw;
-	char **lines;
-} t_file_raw;
+typedef struct s_cursor {
+	int idx;
+	Vector2 pos;
+	Vector2 render_pos;
+	float alpha;
+} t_cursor;
+
+typedef struct s_cursor_style {
+	Color color;
+	style_cursor_e style;
+} t_cursor_style;
 
 typedef struct s_file_header{
+	t_cursor cursor;
 	Vector2 dim;
-	std::vector<std::list<t_glyph*>> glyphs;
 	char *name;
-	Vector2 cursor;
 	bool is_saved = true;
+	std::vector<std::list<t_glyph*>> glyphs;
+	int line_number;
+	int *codepoints;
+	int codepoint_size;
 }t_file_header;
 
 typedef struct s_terminal {
@@ -77,6 +86,7 @@ typedef struct s_workspace {
 	std::string font;
 	u32 fontsize;
 	u32 history_size;
+	t_cursor_style cursor_style;
 } t_workspace;
 
 typedef enum {
@@ -98,3 +108,8 @@ static std::unordered_map<std::string, int> extension_dictionnary{
 };
 
 bool execCmd(char *cmd, std::queue<char> &out, int max_size);
+t_glyph *createGlyph(int data, Color fg) ;
+std::list<t_glyph *> loadGlyphLine(int *data, float *x, int *count);
+t_file_header *loadFileRW(const char *filepath);
+void splitPath(std::string &from, std::vector<std::string> &paths);
+t_workspace loadWorkspace(const char *workspace_filepath);

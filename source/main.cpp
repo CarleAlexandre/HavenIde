@@ -1,15 +1,17 @@
-# include "main.h"
+#include "main.h"
 #include <cassert>
-# define GLSL_VERSION 330
-# include <raylib.h>
-# define RAYGUI_IMPLEMENTATION
-# include <raygui.h>
-# include <raymath.h>
-# include <stdlib.h>
-# include <haven_logic.h>
-# include <stb/stb_c_lexer.h>
-# include <sstream>
-# include <haven_thread.hpp>
+#define GLSL_VERSION 330
+#include <raylib.h>
+#define RAYGUI_IMPLEMENTATION
+#include <raygui.h>
+#include <raymath.h>
+#include <stdlib.h>
+#include <haven_logic.h>
+#include <stb/stb_c_lexer.h>
+#include <haven_thread.hpp>
+#include <iostream>
+#include <stb/stb_truetype.h>
+#include <stb/stb_textedit.h>
 
 struct context {
 	int current_file = 0;
@@ -19,106 +21,6 @@ struct context {
 	t_terminal term;
 	Font font;
 } ctx;
-
-t_glyph *createGlyph(char c, Color fg, Color bg) {
-	t_glyph *glyph;
-
-	glyph = (t_glyph *)malloc(sizeof(t_glyph));
-	glyph->c = c;
-	glyph->fg = fg;
-	glyph->bg = bg;
-	return (glyph);
-}
-
-std::list<t_glyph *> loadGlyphLine(char *data, float *x, int *count) {
-	std::list<t_glyph *> lst;
-	int i = 0;
-
-	for (; data[i] && data[i] != '\n';i++) {
-		lst.push_back(createGlyph(data[i], WHITE, BLACK));
-		if (i > *x) *x = i;
-	}
-	*count += i;
-	return (lst);
-}
-
-t_file_header *loadFileRW(const char *filepath) {
-	int count = 0;
-	assert(filepath);
-	t_file_header *new_file = 0x00;
-	new_file = (t_file_header *)malloc(sizeof(t_file_header));
-	assert(new_file);
-	memset(new_file, 0, sizeof(t_file_header));
-	new_file->name = strdup(filepath);
-	new_file->is_saved = true;
-	new_file->cursor = {};
-	char *data = LoadFileText(filepath);
-
-	char *span = data;
-	for (int i = 0; span[i]; i++) {
-		new_file->glyphs.push_back(loadGlyphLine(&span[i], &new_file->dim.x, &i));
-		new_file->dim.y++;
-	}
-	free(data);
-	return (new_file);
-};
-
-void splitPath(std::string &from, std::vector<std::string> &paths) {
-	std::string span;
-	std::stringstream stream(from.c_str());
-
-	while (std::getline(stream, span)) {
-		paths.push_back(span);
-	}
-}
-
-t_workspace loadWorkspace(const char *workspace_filepath){
-	t_workspace workspace;
-	std::unordered_map<std::string, workspace_token_e> dictionnary = {
-		{"paths", path_tok},
-		{"theme", theme_tok},
-		{"font", font_tok},
-		{"fontsize", fontsize_tok},
-		{"history_size", history_size_tok},
-	};
-
-	char *data = LoadFileText(workspace_filepath);
-
-	std::vector<t_token> tok = tokenizer(data, ",", 1, dictionnary);
-
-	for (auto token: tok) {
-		switch (token.identifier) {
-			case (path_tok): {
-				splitPath(token.value, workspace.paths);
-				break;
-			}
-			case (theme_tok): {
-				workspace.theme = token.value;
-				break;
-			}
-			case (font_tok): {
-				workspace.font = token.value;
-				break;
-			}
-			case (fontsize_tok): {
-				workspace.fontsize = atoi(token.value.c_str());
-				break;
-			}
-			case (history_size_tok): {
-				workspace.history_size = atoi(token.value.c_str());
-				break;
-			}
-			default:break;
-		}
-	}
-	for (auto file : workspace.paths) {
-		auto tmp = loadFileRW(file.c_str());
-		assert(tmp);
-		workspace.files.push_back(tmp);
-	}
-	free(data);
-	return (workspace);
-}
 
 int ControlBar(t_workspace *workspace) {
 	static int status_bar_show = 0;
@@ -181,14 +83,10 @@ int ControlBar(t_workspace *workspace) {
 void saveTheFile(t_file_header file) {
 	std::string stream;
 
-	for (int y = 0; y < file.dim.y; y++) {
-		auto &span = file.glyphs[y];
-		for (auto it : span) {
-			stream += it->c;
-		}
-		stream += '\n';
-	}
+	auto data = LoadUTF8(file.codepoints, file.codepoint_size);
+	stream = data;
 	SaveFileText(file.name, (char *)stream.c_str());
+	UnloadUTF8(data);
 	stream.clear();
 }
 
@@ -196,57 +94,104 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	static Vector2 scroll = {};
 	static Rectangle view = {};
 	static int start_line = 0;
-	std::string buff;
+	static double time = 0;
+	static float incr = 0;
+	t_cursor *cursor;
+	
+	cursor = &workspace->files[ctx.current_file]->cursor;
 
 	if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), bound)) {
 		Vector2 mouse_pos = GetMousePosition();
-		workspace->files[ctx.current_file]->cursor.x = floor((mouse_pos.x - 40 - ctx.texteditor_bound.x - scroll.x) / (workspace->fontsize));
-		workspace->files[ctx.current_file]->cursor.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
-		workspace->files[ctx.current_file]->cursor.y = clamp(workspace->files[ctx.current_file]->cursor.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
-		workspace->files[ctx.current_file]->cursor.x = clamp(workspace->files[ctx.current_file]->cursor.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size());
+		cursor->pos.x = 0;
+		cursor->pos.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
+		cursor->pos.y = clamp(cursor->pos.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
 	}
 
+	if (!cursor->render_pos.x) {
+		cursor->render_pos.x = 60 + bound.x + scroll.x;
+	}
+	if (!cursor->render_pos.y) {
+		cursor->render_pos.y = bound.y + 30 + scroll.y;
+	}
 	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name, (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * (float)(workspace->fontsize * 0.5) + 60, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
 	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
 	BeginScissorMode(view.x, view. y, view. width, view. height);
+	int sort = 0;
 	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
 		std::list<t_glyph *> &line = workspace->files[ctx.current_file]->glyphs[y];
+		int x = 0;
+		int glyphx = 0;
+		int position_x = 0;
 		if (!line.empty()) {
-			int x = 0;
 			for (auto tmp : line) {
-				buff += tmp->c;
-				DrawTextEx(ctx.font, buff.c_str(), {60 + bound.x + scroll.x + x * (float)(workspace->fontsize * 0.5), bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)}, workspace->fontsize, 0, tmp->fg);
-				buff.clear();
+				Vector2 pos = {60 + bound.x + scroll.x + glyphx * (float)(workspace->fontsize * 0.5), bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)};
+				if (cursor->pos.y == y && cursor->pos.x == x) {
+					sort = position_x;
+				}
+				if (tmp->codepoint == '\t') {
+					int mod = tmp->spacing - glyphx % tmp->spacing;
+					for (int space = 0; space < mod; space++) {
+						pos.x = (60 + bound.x + scroll.x + glyphx * (float)(workspace->fontsize * 0.5));
+						DrawTextCodepoint(ctx.font, 32, pos, workspace->fontsize, tmp->fg);
+						glyphx++;
+					}
+					position_x += mod + 1;
+				} else {
+					DrawTextCodepoint(ctx.font, tmp->codepoint, pos, workspace->fontsize, tmp->fg);
+					position_x ++;
+				}
+				glyphx++;
 				x++;
+			}
+			if (cursor->pos.y == y && cursor->pos.x == x) {
+				sort = position_x;
 			}
 		}
 	}
+	cursor->render_pos.x = 60 + bound.x + scroll.x + sort * (workspace->fontsize * 0.5);
+	cursor->render_pos.y = bound.y + 30 + scroll.y + cursor->pos.y * (workspace->fontsize * 1.5);
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < start_line + 200 && y < workspace->files[ctx.current_file]->dim.y; y++) {
 		DrawTextEx(ctx.font, TextFormat(" %5i ", y + 1), {bound.x, bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)}, workspace->fontsize, 0, WHITE);
 	}
-	static double time = 0;
-	static float alpha = 1;
-	static float incr = 0;
 	if (!GetKeyPressed()) {
 		time += GetFrameTime();
-		if (alpha >= 1 ) incr = -0.02;
-		if (alpha <= 0) incr = 0.02;
+		if (cursor->alpha >= 1 ) incr = -0.02;
+		if (cursor->alpha <= 0) incr = 0.02;
 		if (time >= 0.02) {
-			alpha += incr;
+			cursor->alpha += incr;
 			time = 0;
 		}
 	} else {
-		alpha = 1;
+		cursor->alpha = 1;
 		time = -1;
 	}
-	DrawRectangleLines(60 + bound.x + scroll.x + workspace->files[ctx.current_file]->cursor.x * (workspace->fontsize * 0.5), bound.y + 30 + scroll.y + workspace->files[ctx.current_file]->cursor.y * (workspace->fontsize * 1.5), workspace->fontsize * 0.5, workspace->fontsize, ColorAlpha(GREEN, alpha));
+	switch (workspace->cursor_style.style) {
+		case (box_cursor): {
+			DrawRectangleLines(cursor->render_pos.x, cursor->render_pos.y, workspace->fontsize * 0.5, workspace->fontsize, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			break;
+		}
+		case (half_box_cursor): {
+			DrawRectangleLines(cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize * 0.5, workspace->fontsize * 0.5, workspace->fontsize * 0.5, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			break;
+		}
+		case (underscore_cursor): {
+			DrawRectangle(cursor->render_pos.x, cursor->render_pos.y, workspace->fontsize * 0.5, 2, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			break;
+		}
+		case (pipe_cursor): {
+			DrawLine(cursor->render_pos.x, cursor->render_pos.y, cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize * 0.5, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			break;
+		}
+		default:break;
+	};
 	EndScissorMode();
 	if (workspace->files[ctx.current_file]->is_saved) {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, BLUE);
 	} else {
 		DrawCircle(bound.width + bound.x - 7, bound.height + bound.y - 9, 4, RED);
 	}
+	workspace->files[ctx.current_file]->cursor = *cursor;
 }
 
 void TerminalOut(t_workspace *workspace, const Rectangle bound) {	
@@ -272,8 +217,8 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 void editorInput(t_workspace *workspace, const double delta_time) {
 	static double time = 0;
 	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound)) {
-		auto insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].begin();
-		std::advance(insert_place, workspace->files[ctx.current_file]->cursor.x);
+		auto insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].begin();
+		std::advance(insert_place, workspace->files[ctx.current_file]->cursor.pos.x);
 		if (IsKeyDown(KEY_LEFT_CONTROL)){
 			if (IsKeyPressed(KEY_S) && !workspace->files[ctx.current_file]->is_saved) {
 				saveTheFile(*workspace->files[ctx.current_file]);
@@ -293,11 +238,11 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 			if (IsKeyDown(KEY_LEFT) || (IsKeyDown(KEY_H) && ctx.mode == normal && !ctx.term.open)) {
 				time += delta_time;
 				if (time >= INPUT_TIME * 0.5) {
-					if (workspace->files[ctx.current_file]->cursor.x > 0) {
-						workspace->files[ctx.current_file]->cursor.x--;
-					} else if (workspace->files[ctx.current_file]->cursor.y > 0){
-						workspace->files[ctx.current_file]->cursor.y--;
-						workspace->files[ctx.current_file]->cursor.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size();
+					if (workspace->files[ctx.current_file]->cursor.pos.x > 0) {
+						workspace->files[ctx.current_file]->cursor.pos.x--;
+					} else if (workspace->files[ctx.current_file]->cursor.pos.y > 0){
+						workspace->files[ctx.current_file]->cursor.pos.y--;
+						workspace->files[ctx.current_file]->cursor.pos.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].size();
 					}
 					time = 0;
 				}
@@ -305,28 +250,28 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 			if (IsKeyDown(KEY_RIGHT) || (IsKeyDown(KEY_L) && ctx.mode == normal && !ctx.term.open)) {
 				time += delta_time;
 				if (time >= INPUT_TIME * 0.5) {
-					if (workspace->files[ctx.current_file]->cursor.x < workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size()) {
-						workspace->files[ctx.current_file]->cursor.x++;
-					} else if (workspace->files[ctx.current_file]->cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
-						workspace->files[ctx.current_file]->cursor.y++;
-						workspace->files[ctx.current_file]->cursor.x = 0;
+					if (workspace->files[ctx.current_file]->cursor.pos.x < workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].size()) {
+						workspace->files[ctx.current_file]->cursor.pos.x++;
+					} else if (workspace->files[ctx.current_file]->cursor.pos.y < workspace->files[ctx.current_file]->dim.y - 1) {
+						workspace->files[ctx.current_file]->cursor.pos.y++;
+						workspace->files[ctx.current_file]->cursor.pos.x = 0;
 					}
 					time = 0;
 				}
 			}
-			if ((IsKeyDown(KEY_UP) || (IsKeyDown(KEY_J) && ctx.mode == normal && !ctx.term.open)) && workspace->files[ctx.current_file]->cursor.y > 0) {
+			if ((IsKeyDown(KEY_UP) || (IsKeyDown(KEY_J) && ctx.mode == normal && !ctx.term.open)) && workspace->files[ctx.current_file]->cursor.pos.y > 0) {
 				time += delta_time;
 				if (time >= INPUT_TIME* 0.5) {
-					workspace->files[ctx.current_file]->cursor.y--;
-					workspace->files[ctx.current_file]->cursor.x = clamp(workspace->files[ctx.current_file]->cursor.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size());
+					workspace->files[ctx.current_file]->cursor.pos.y--;
+					workspace->files[ctx.current_file]->cursor.pos.x = clamp(workspace->files[ctx.current_file]->cursor.pos.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].size());
 					time = 0;
 				}
 			}
-			if ((IsKeyDown(KEY_DOWN) || (IsKeyDown(KEY_K) && ctx.mode == normal && !ctx.term.open)) && workspace->files[ctx.current_file]->cursor.y < workspace->files[ctx.current_file]->dim.y - 1) {
+			if ((IsKeyDown(KEY_DOWN) || (IsKeyDown(KEY_K) && ctx.mode == normal && !ctx.term.open)) && workspace->files[ctx.current_file]->cursor.pos.y < workspace->files[ctx.current_file]->dim.y - 1) {
 				time += delta_time;
 				if (time >= INPUT_TIME* 0.5) {
-					workspace->files[ctx.current_file]->cursor.y++;
-					workspace->files[ctx.current_file]->cursor.x = clamp(workspace->files[ctx.current_file]->cursor.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].size());
+					workspace->files[ctx.current_file]->cursor.pos.y++;
+					workspace->files[ctx.current_file]->cursor.pos.x = clamp(workspace->files[ctx.current_file]->cursor.pos.x, 0, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].size());
 					time = 0;
 				}
 			}
@@ -345,24 +290,24 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 				if (IsKeyDown(KEY_BACKSPACE)) {
 					time += delta_time;
 					if (time >= INPUT_TIME) {
-						if (workspace->files[ctx.current_file]->cursor.x) {
-							workspace->files[ctx.current_file]->cursor.x--;
-							insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].erase(--insert_place);
+						if (workspace->files[ctx.current_file]->cursor.pos.x) {
+							workspace->files[ctx.current_file]->cursor.pos.x--;
+							insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].erase(--insert_place);
 							if (workspace->files[ctx.current_file]->is_saved)
 								workspace->files[ctx.current_file]->is_saved = false;
-						} else if (workspace->files[ctx.current_file]->cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y - 1].empty()) {
-							workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y - 1);
+						} else if (workspace->files[ctx.current_file]->cursor.pos.y >= 1 && workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y - 1].empty()) {
+							workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y - 1);
 							workspace->files[ctx.current_file]->dim.y--;
-							workspace->files[ctx.current_file]->cursor.y--;
-							workspace->files[ctx.current_file]->cursor.x = 0;
+							workspace->files[ctx.current_file]->cursor.pos.y--;
+							workspace->files[ctx.current_file]->cursor.pos.x = 0;
 							if (workspace->files[ctx.current_file]->is_saved)
 								workspace->files[ctx.current_file]->is_saved = false;
-						} else if (workspace->files[ctx.current_file]->cursor.y >= 1) {
+						} else if (workspace->files[ctx.current_file]->cursor.pos.y >= 1) {
 							workspace->files[ctx.current_file]->dim.y--;
-							workspace->files[ctx.current_file]->cursor.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y - 1].size();
-							workspace->files[ctx.current_file]->cursor.y--;
-							workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].splice(workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].end(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y + 1]);
-							workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y + 1);
+							workspace->files[ctx.current_file]->cursor.pos.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y - 1].size();
+							workspace->files[ctx.current_file]->cursor.pos.y--;
+							workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].splice(workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].end(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y + 1]);
+							workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y + 1);
 							if (workspace->files[ctx.current_file]->is_saved)
 								workspace->files[ctx.current_file]->is_saved = false;
 						}
@@ -373,12 +318,12 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 					time += delta_time;
 					if (time >= INPUT_TIME) {
 						std::list<t_glyph *> lst = {};
-						lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].end());
-						workspace->files[ctx.current_file]->cursor.y++;
-						workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y, lst);
-						workspace->files[ctx.current_file]->cursor.x = 0;
+						lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y], insert_place++, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].end());
+						workspace->files[ctx.current_file]->cursor.pos.y++;
+						workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y, lst);
+						workspace->files[ctx.current_file]->cursor.pos.x = 0;
 						workspace->files[ctx.current_file]->dim.y++;
-						insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].begin();
+						insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].begin();
 						if (workspace->files[ctx.current_file]->is_saved)
 							workspace->files[ctx.current_file]->is_saved = false;
 						time = 0;
@@ -387,8 +332,8 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 				if (IsKeyDown(KEY_TAB)) {
 					time += delta_time;
 					if (time >= INPUT_TIME) {
-						workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].emplace(insert_place++, createGlyph('\t', WHITE, BLACK));
-						workspace->files[ctx.current_file]->cursor.x++;
+						workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].emplace(insert_place++, createGlyph('\t', WHITE));
+						workspace->files[ctx.current_file]->cursor.pos.x++;
 						if (workspace->files[ctx.current_file]->is_saved)
 							workspace->files[ctx.current_file]->is_saved = false;
 						time = 0;
@@ -396,24 +341,24 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 				}
 				if (IsKeyPressed(KEY_BACKSPACE)) {
 					time = 0;
-					if (workspace->files[ctx.current_file]->cursor.x) {
-						workspace->files[ctx.current_file]->cursor.x--;
-						insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].erase(--insert_place);
+					if (workspace->files[ctx.current_file]->cursor.pos.x) {
+						workspace->files[ctx.current_file]->cursor.pos.x--;
+						insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].erase(--insert_place);
 						if (workspace->files[ctx.current_file]->is_saved)
 							workspace->files[ctx.current_file]->is_saved = false;
-					} else if (workspace->files[ctx.current_file]->cursor.y >= 1 && workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y - 1].empty()) {
-						workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y - 1);
+					} else if (workspace->files[ctx.current_file]->cursor.pos.y >= 1 && workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y - 1].empty()) {
+						workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y - 1);
 						workspace->files[ctx.current_file]->dim.y--;
-						workspace->files[ctx.current_file]->cursor.y--;
-						workspace->files[ctx.current_file]->cursor.x = 0;
+						workspace->files[ctx.current_file]->cursor.pos.y--;
+						workspace->files[ctx.current_file]->cursor.pos.x = 0;
 						if (workspace->files[ctx.current_file]->is_saved)
 							workspace->files[ctx.current_file]->is_saved = false;
-					} else if (workspace->files[ctx.current_file]->cursor.y >= 1) {
+					} else if (workspace->files[ctx.current_file]->cursor.pos.y >= 1) {
 						workspace->files[ctx.current_file]->dim.y--;
-						workspace->files[ctx.current_file]->cursor.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y - 1].size();
-						workspace->files[ctx.current_file]->cursor.y--;
-						workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].splice(workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].end(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y + 1]);
-						workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y + 1);
+						workspace->files[ctx.current_file]->cursor.pos.x = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y - 1].size();
+						workspace->files[ctx.current_file]->cursor.pos.y--;
+						workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].splice(workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].end(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y + 1]);
+						workspace->files[ctx.current_file]->glyphs.erase(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y + 1);
 						if (workspace->files[ctx.current_file]->is_saved)
 							workspace->files[ctx.current_file]->is_saved = false;
 					}
@@ -421,27 +366,27 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 				if (IsKeyPressed(KEY_ENTER)) {
 					time = 0;
 					std::list<t_glyph *> lst = {};
-					lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y], insert_place++, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].end());
-					workspace->files[ctx.current_file]->cursor.y++;
-					workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.y, lst);
-					workspace->files[ctx.current_file]->cursor.x = 0;
+					lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y], insert_place++, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].end());
+					workspace->files[ctx.current_file]->cursor.pos.y++;
+					workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y, lst);
+					workspace->files[ctx.current_file]->cursor.pos.x = 0;
 					workspace->files[ctx.current_file]->dim.y++;
-					insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].begin();
+					insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].begin();
 					if (workspace->files[ctx.current_file]->is_saved)
 						workspace->files[ctx.current_file]->is_saved = false;
 				}
 				if (IsKeyPressed(KEY_TAB)) {
 					time = 0;
-					workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].emplace(insert_place++, createGlyph('\t', WHITE, BLACK));
-					workspace->files[ctx.current_file]->cursor.x++;
+					workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].emplace(insert_place++, createGlyph('\t', WHITE));
+					workspace->files[ctx.current_file]->cursor.pos.x++;
 					if (workspace->files[ctx.current_file]->is_saved)
 						workspace->files[ctx.current_file]->is_saved = false;
 				}
 				int key = GetCharPressed();
 				while (key) {
 					if ((key >= 32) && (key <= 125)) {
-						workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.y].emplace(insert_place++, createGlyph((char)key, WHITE, BLACK));
-						workspace->files[ctx.current_file]->cursor.x++;
+						workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].emplace(insert_place++, createGlyph(key, WHITE));
+						workspace->files[ctx.current_file]->cursor.pos.x++;
 						if (workspace->files[ctx.current_file]->is_saved)
 							workspace->files[ctx.current_file]->is_saved = false;
 					}
@@ -457,11 +402,13 @@ void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 		ctx.term.open = false;
 		if (execCmd(ctx.term.in, ctx.term.out, 4096)) {
 			std::string str;
-			for (;!ctx.term.out.empty();) {
-				if (ctx.term.out.front() == '\n') {
+			for (;;) {
+				if (ctx.term.out.front() == '\r' || ctx.term.out.front() == '\n') {
 					ctx.term.fOut.push_back(str);
 					str.clear();
-					ctx.term.out.pop();
+					while (!ctx.term.out.empty() && (ctx.term.out.front() == '\n' || ctx.term.out.front() == '\r')) {
+						ctx.term.out.pop();
+					}
 					if (ctx.term.out.empty()) break;
 				}
 				str += ctx.term.out.front();
@@ -523,19 +470,17 @@ int View(t_workspace *workspace){
 	return (ret);
 }
 
+#include <iostream>
+
 int main(int ac, char **av) {
 	int monitor_count = 0;
 	int step = 0;
 	t_workspace workspace;
 	std::atomic_bool join_sync;
-
 	join_sync.store(false);
-
 	startThreadPool(&join_sync);
-
 	InitWindow(400, 400, "HavenIde");
 	SetExitKey(0);
-
 	monitor_count = GetMonitorCount();
 	t_monitor *displays = (t_monitor *)malloc(monitor_count * sizeof(t_monitor));
 	if (!displays) {
@@ -549,18 +494,13 @@ int main(int ac, char **av) {
 		displays[i].id = i;
 		printf("refresh rate: %i, width: %i, height: %i, id: %i\n", displays[i].refresh_rate, displays[i].width, displays[i].height, i);
 	}
-
 	const char * appdir = GetApplicationDirectory();
-
 	workspace = loadWorkspace(TextFormat("%s/workspace/default.workspace", appdir));
-
 	GuiLoadStyle(TextFormat("%s/assets/styles/style_%s.rgs", appdir, workspace.theme.c_str()));
-
-	ctx.font = LoadFont(TextFormat("%s/assets/font/%s.ttf", appdir, workspace.font.c_str()));
+	ctx.font = LoadFontEx(TextFormat("%s/assets/font/%s.ttf", appdir, workspace.font.c_str()), 32, NULL, INT16_MAX);
+	SetTextureFilter(ctx.font.texture, TEXTURE_FILTER_TRILINEAR);
 	GuiSetFont(ctx.font);
-
 	SetTargetFPS(120);
-
 	bool shouldClose = false;
 	while (!shouldClose) {
 		switch (step) {
@@ -576,7 +516,8 @@ int main(int ac, char **av) {
 							SetWindowMinSize(720, 480);
 							SetWindowSize(1600, 1000);
 							SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNDECORATED);
-							SetWindowPosition(0, 0);
+							Vector2 pos = GetMonitorPosition(i);
+							SetWindowPosition(pos.x, pos.y);
 							step = stdview;
 							free (displays);
 							displays = 0x00;
