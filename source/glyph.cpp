@@ -1,8 +1,6 @@
 #include "main.h"
 #include <cassert>
 #include <string.h>
-#include <stdio.h>
-//take return from first line idx first char a const char * and pute \0 instead of \n at end idx
 
 t_glyph *createGlyph(int data, Color fg) {
 	t_glyph *glyph;
@@ -23,9 +21,10 @@ std::list<t_glyph *> loadGlyphLine(int *data, float *x, int *count, int max_size
 	std::list<t_glyph *> lst;
 	int i = 0;
 
-	for (; i + *count < max_size && data[i] != '\n';i++) {
+	for (; i + *count < max_size;i++) {
 		lst.push_back(createGlyph(data[i], WHITE));
 		if (i > *x) *x = i;
+		if (data[i] == '\n')break;
 	}
 	*count += i;
 	return (lst);
@@ -42,6 +41,10 @@ t_file_header *loadFileRW(const char *filepath) {
 	new_file->is_saved = true;
 	new_file->cursor = {};
 	char *data = LoadFileText(filepath);
+	if (!data){
+		new_file->glyphs.push_back(std::list<t_glyph *>(0x00));
+		return(new_file);
+	}
 	new_file->codepoints = LoadCodepoints(data, &new_file->codepoint_size);
 
 	int *span = new_file->codepoints;
@@ -49,6 +52,7 @@ t_file_header *loadFileRW(const char *filepath) {
 		new_file->glyphs.push_back(loadGlyphLine(&new_file->codepoints[i], &new_file->dim.x, &i, new_file->codepoint_size));
 		new_file->dim.y++;
 	}
+	new_file->glyphs.push_back(std::list<t_glyph *>({createGlyph('\n', WHITE)}));
 	free(data);
 	return (new_file);
 };

@@ -9,18 +9,32 @@
 #include <haven_logic.h>
 #include <stb/stb_c_lexer.h>
 #include <haven_thread.hpp>
-#include <iostream>
 #include <stb/stb_truetype.h>
 #include <stb/stb_textedit.h>
 
-struct context {
-	int current_file = 0;
-	Rectangle terminal_bound;
-	Rectangle texteditor_bound;
-	vi_mod mode;
-	t_terminal term;
-	Font font;
-} ctx;
+t_context ctx;
+
+void saveTheFile(t_file_header *file) {
+	file->is_saved = true;
+	std::vector<int> span;
+	for (int y = 0; y < file->glyphs.size(); y++) {
+		for (auto line : file->glyphs[y]) {
+			span.push_back(line->codepoint);
+		}
+		span.push_back('\n');
+	}
+	UnloadCodepoints(file->codepoints);
+
+	file->codepoint_size = span.size();
+	file->codepoints = (int *)MemAlloc(sizeof(int) * file->codepoint_size);
+	assert(file->codepoints);
+	for (int i = 0; i < span.size(); i++) {
+		file->codepoints[i] = span[i];
+	}
+	auto data = LoadUTF8(file->codepoints, file->codepoint_size);
+	SaveFileText(file->name, data);
+	UnloadUTF8(data);
+} 
 
 int ControlBar(t_workspace *workspace) {
 	static int status_bar_show = 0;
@@ -33,6 +47,7 @@ int ControlBar(t_workspace *workspace) {
 		status_bar_show = show_file;
 	}
 	if (GuiButton((Rectangle){60, 0, 60 , 20}, "edit")) {
+		ctx.setting_open = true;
 		status_bar_show = show_edit;
 	}
 	if (GuiButton((Rectangle){120, 0, 60 , 20}, "run")) {
@@ -66,6 +81,15 @@ int ControlBar(t_workspace *workspace) {
 			//save_file
 			//edit_workspace
 			//
+			GuiButton({0, 20, 60, 20}, "+ file");
+			GuiButton({0, 40, 60, 20}, "- file");
+			if (GuiButton({0, 60, 60, 20}, "save")) saveTheFile(workspace->files[ctx.current_file]);
+			if (GuiButton({0, 80, 60, 20}, "save all")) {
+				for (int i = 0; i < workspace->files.size(); i++) {
+					saveTheFile(workspace->files[i]);
+				}
+			}
+			if (GuiButton({0, 100, 60, 20}, "close")) return(-1);
 
 			break;
 		}
@@ -78,16 +102,6 @@ int ControlBar(t_workspace *workspace) {
 		default:break;
 	}
 	return (1);
-}
-
-void saveTheFile(t_file_header file) {
-	std::string stream;
-
-	auto data = LoadUTF8(file.codepoints, file.codepoint_size);
-	stream = data;
-	SaveFileText(file.name, (char *)stream.c_str());
-	UnloadUTF8(data);
-	stream.clear();
 }
 
 void TextEditor(const Rectangle bound, t_workspace *workspace) {
@@ -105,13 +119,6 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 		cursor->pos.x = 0;
 		cursor->pos.y = floor((mouse_pos.y - bound.y - 30 - scroll.y) / (workspace->fontsize * 1.5));
 		cursor->pos.y = clamp(cursor->pos.y, 0, workspace->files[ctx.current_file]->dim.y - 1);
-	}
-
-	if (!cursor->render_pos.x) {
-		cursor->render_pos.x = 60 + bound.x + scroll.x;
-	}
-	if (!cursor->render_pos.y) {
-		cursor->render_pos.y = bound.y + 30 + scroll.y;
 	}
 	GuiScrollPanel(bound, workspace->files[ctx.current_file]->name, (Rectangle){0, 0, (workspace->files[ctx.current_file]->dim.x + 5) * (float)(workspace->fontsize * 0.5) + 60, (float)30+(workspace->files[ctx.current_file]->dim.y * (float)(workspace->fontsize * 1.5))}, &scroll, &view);
 	start_line = 0 - scroll.y / (workspace->fontsize * 1.5);
@@ -176,11 +183,11 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 			break;
 		}
 		case (underscore_cursor): {
-			DrawRectangle(cursor->render_pos.x, cursor->render_pos.y, workspace->fontsize * 0.5, 2, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			DrawRectangle(cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize, workspace->fontsize * 0.5, 2, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
 			break;
 		}
 		case (pipe_cursor): {
-			DrawLine(cursor->render_pos.x, cursor->render_pos.y, cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize * 0.5, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			DrawLine(cursor->render_pos.x, cursor->render_pos.y, cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
 			break;
 		}
 		default:break;
@@ -216,13 +223,15 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 
 void editorInput(t_workspace *workspace, const double delta_time) {
 	static double time = 0;
+	auto insert_place = workspace->files[ctx.current_file]->glyphs.begin()->begin();;
 	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound)) {
-		auto insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].begin();
-		std::advance(insert_place, workspace->files[ctx.current_file]->cursor.pos.x);
+		if (!workspace->files[ctx.current_file]->glyphs.begin()->empty()) {
+			auto insert_place = workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].begin();
+			std::advance(insert_place, workspace->files[ctx.current_file]->cursor.pos.x);
+		}
 		if (IsKeyDown(KEY_LEFT_CONTROL)){
 			if (IsKeyPressed(KEY_S) && !workspace->files[ctx.current_file]->is_saved) {
-				saveTheFile(*workspace->files[ctx.current_file]);
-				workspace->files[ctx.current_file]->is_saved = true;
+				saveTheFile(workspace->files[ctx.current_file]);
 			}
 			if ((IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_H)) && ctx.current_file) {
 				ctx.current_file--;
@@ -250,7 +259,7 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 			if (IsKeyDown(KEY_RIGHT) || (IsKeyDown(KEY_L) && ctx.mode == normal && !ctx.term.open)) {
 				time += delta_time;
 				if (time >= INPUT_TIME * 0.5) {
-					if (workspace->files[ctx.current_file]->cursor.pos.x < workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].size()) {
+					if (workspace->files[ctx.current_file]->cursor.pos.x < workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].size() - 1) {
 						workspace->files[ctx.current_file]->cursor.pos.x++;
 					} else if (workspace->files[ctx.current_file]->cursor.pos.y < workspace->files[ctx.current_file]->dim.y - 1) {
 						workspace->files[ctx.current_file]->cursor.pos.y++;
@@ -317,7 +326,7 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 				if (IsKeyDown(KEY_ENTER)) {
 					time += delta_time;
 					if (time >= INPUT_TIME) {
-						std::list<t_glyph *> lst = {};
+						std::list<t_glyph *> lst = {0x00};
 						lst.splice(lst.begin(), workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y], insert_place++, workspace->files[ctx.current_file]->glyphs[workspace->files[ctx.current_file]->cursor.pos.y].end());
 						workspace->files[ctx.current_file]->cursor.pos.y++;
 						workspace->files[ctx.current_file]->glyphs.insert(workspace->files[ctx.current_file]->glyphs.begin() + workspace->files[ctx.current_file]->cursor.pos.y, lst);
@@ -466,11 +475,12 @@ int View(t_workspace *workspace){
 			TerminalIn(workspace, {sep1, 20, width - sep1 - 30, 20});
 		}
 		ret = ControlBar(workspace);
+		if (ctx.setting_open) {
+			renderSetting(workspace, &ctx.setting_open);
+		}
 	EndDrawing();
 	return (ret);
 }
-
-#include <iostream>
 
 int main(int ac, char **av) {
 	int monitor_count = 0;

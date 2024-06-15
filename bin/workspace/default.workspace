@@ -1,11 +1,9 @@
-paths:source/main.cpp
-source/main.h
-source/process.cpp
+paths:test.c
 ylt.txt
-Makefile,
+text.txt,
 theme:terminal,
 font:firacode,
 fontsize:16,
 history_size:100,
-cursor_style:1,
+cursor_style:3,
 cursor_color:0.228.48.255,

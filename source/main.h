@@ -95,6 +95,16 @@ typedef enum {
 	markdown_ext = 3,
 } extension_enum;
 
+typedef struct s_context {
+	int current_file = 0;
+	Rectangle terminal_bound;
+	Rectangle texteditor_bound;
+	vi_mod mode;
+	t_terminal term;
+	Font font;
+	bool setting_open = false;
+} t_context;
+
 #define INPUT_TIME 0.075
 
 static std::unordered_map<std::string, int> extension_dictionnary{
@@ -113,3 +123,4 @@ std::list<t_glyph *> loadGlyphLine(int *data, float *x, int *count);
 t_file_header *loadFileRW(const char *filepath);
 void splitPath(std::string &from, std::vector<std::string> &paths);
 t_workspace loadWorkspace(const char *workspace_filepath);
+void renderSetting(t_workspace *workspace, bool *active);
