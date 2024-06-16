@@ -17,13 +17,12 @@ t_glyph *createGlyph(int data, Color fg) {
 	return (glyph);
 }
 
-std::list<t_glyph *> loadGlyphLine(int *data, float *x, int *count, int max_size) {
+std::list<t_glyph *> loadGlyphLine(int *data, int *count, int max_size) {
 	std::list<t_glyph *> lst;
 	int i = 0;
 
 	for (; i + *count < max_size;i++) {
 		lst.push_back(createGlyph(data[i], WHITE));
-		if (i > *x) *x = i;
 		if (data[i] == '\n')break;
 	}
 	*count += i;
@@ -49,10 +48,13 @@ t_file_header *loadFileRW(const char *filepath) {
 
 	int *span = new_file->codepoints;
 	for (int i = 0; i < new_file->codepoint_size; i++) {
-		new_file->glyphs.push_back(loadGlyphLine(&new_file->codepoints[i], &new_file->dim.x, &i, new_file->codepoint_size));
-		new_file->dim.y++;
+		new_file->glyphs.push_back(loadGlyphLine(&new_file->codepoints[i], &i, new_file->codepoint_size));
 	}
-	new_file->glyphs.push_back(std::list<t_glyph *>({createGlyph('\n', WHITE)}));
+	if (new_file->glyphs.back().back()->codepoint == '\n') {
+		new_file->glyphs.push_back(std::list<t_glyph *>({createGlyph('\0', WHITE)}));
+	} else {
+		new_file->glyphs.back().push_back(createGlyph('\0', WHITE));
+	}
 	free(data);
 	return (new_file);
 };

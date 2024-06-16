@@ -33,6 +33,7 @@ typedef enum {
 	insert = 1,
 	visual = 2,
 	visual_block = 3,
+	insert_block = 4,
 } vi_mod;
 
 typedef enum {
@@ -62,7 +63,6 @@ typedef struct s_cursor_style {
 
 typedef struct s_file_header{
 	t_cursor cursor;
-	Vector2 dim;
 	char *name;
 	bool is_saved = true;
 	std::vector<std::list<t_glyph*>> glyphs;
