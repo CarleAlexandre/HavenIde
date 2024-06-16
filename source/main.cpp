@@ -111,8 +111,6 @@ int ControlBar(t_workspace *workspace) {
 	return (1);
 }
 
-#include <iostream>
-
 void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	static Vector2 scroll = {};
 	static Rectangle view = {};
