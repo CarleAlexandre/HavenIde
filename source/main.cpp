@@ -88,8 +88,8 @@ int ControlBar(t_workspace *workspace) {
 			//save_file
 			//edit_workspace
 			//
-			GuiButton({0, 20, 60, 20}, "+ file");
-			GuiButton({0, 40, 60, 20}, "- file");
+			if (GuiButton({0, 20, 60, 20}, "+ file")) return (4);
+			if (GuiButton({0, 40, 60, 20}, "- file")) return (8);
 			if (GuiButton({0, 60, 60, 20}, "save")) saveTheFile(workspace->files[ctx.current_file]);
 			if (GuiButton({0, 80, 60, 20}, "save all")) {
 				for (int i = 0; i < workspace->files.size(); i++) {
@@ -498,8 +498,36 @@ void ContextBar(const Rectangle bound, t_workspace *workspace) {
 	}
 }
 
+void add_file(t_workspace *workspace, bool *show) {
+	static char input[100];
+	if (GuiWindowBox({50, 50, (float)(GetScreenWidth() * 0.5), (float)(GetScreenHeight() * 0.5)}, "Add File")) *show = !*show;
+	if (GuiTextBox({60, 80, 100, 20}, input, 100, true)) printf("ALLO!!\n");
+}
+
+void del_file(t_workspace *workspace, bool *show) {
+	static Vector2 scroll;
+	static Rectangle view;
+	Rectangle bound;
+	bound = {50, 50, (float)(GetScreenWidth() * 0.5), (float)(GetScreenHeight() * 0.5)};
+	if (GuiWindowBox(bound, "Add File")) *show = !*show;
+	bound.y += 20;
+	bound.height-=20;
+	GuiScrollPanel(bound, NULL, {0, 0, 100 + 70, (float)20 * workspace->paths.size() + 80}, &scroll, &view);
+
+	BeginScissorMode(view.x, view.y, view.width, view.height);
+		for (int i = 0; i < workspace->paths.size(); i++) {
+			if (GuiButton({70, (float)80 + 30 * i, 100, 20}, workspace->paths[i].c_str())) {
+				printf("%s\n", workspace->paths[i].c_str());
+			}
+		}
+	EndScissorMode();
+}
+
 int View(t_workspace *workspace){
 	static float sep1 = 400;
+	static bool show_add_file = false;
+	static bool show_del_file = false;
+
 	float height, width;
 	int ret = 1;
 	//static double parse_time = 0;
@@ -527,8 +555,31 @@ int View(t_workspace *workspace){
 			TerminalIn(workspace, {sep1, 20, width - sep1 - 30, 20});
 		}
 		ret = ControlBar(workspace);
+		switch (ret) {
+			case (4):{
+				show_add_file = true;
+				ret = 1;
+				break;
+			}
+			case (8): {
+				show_del_file = true;
+				ret = 1;
+				break;
+			}
+			case (-1):{
+				break;
+			}
+			default: {
+				ret = 1;
+				break;
+			}
+		}
 		if (ctx.setting_open) {
 			renderSetting(workspace, &ctx.setting_open);
+		} else if (show_add_file) {
+			add_file(workspace, &show_add_file);
+		} else if (show_del_file) {
+			del_file(workspace, &show_del_file);
 		}
 		ContextBar({ctx.terminal_bound.width, ctx.texteditor_bound.height + 20, ctx.texteditor_bound.width, 20}, workspace);
 	EndDrawing();
