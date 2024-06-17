@@ -14,3 +14,4 @@ saving stats in case of crash
 ajout du mode visuel et visual block
 for cursor movement, use travel to and topos
 Drag Window
+parse from codepoints or glyphs but not from loaded utf8

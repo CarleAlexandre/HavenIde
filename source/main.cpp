@@ -22,6 +22,24 @@ std::unordered_map<vi_mod, const char *> vi_mods_dictionnary {
 	{insert_block, "insert_block"},
 };
 
+static void travelTarget(Vector2 *current, const Vector2 target, const f32 velocity, const f32 deltaTime) {
+	Vector2 travel = {target.x - current->x, target.y - current->y};
+	f32	distance = Vector2Distance(*current, target);
+	f32	step = velocity * deltaTime;
+	if (distance > step * step) {
+		f32 tmp = rsqrt(distance);
+		travel.x *= tmp;
+		travel.y *= tmp;
+		travel.x *= step;
+		travel.y *= step;
+		current->x += travel.x;
+		current->y += travel.y;
+		return;
+	}
+	*current = target;
+	return;
+}
+
 void saveTheFile(t_file_header *file) {
 	file->is_saved = true;
 	std::vector<int> span;
@@ -180,8 +198,13 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 			}
 		}
 	}
+	static Vector2 CursorStart = {};
+
 	cursor->render_pos.x = 60 + bound.x + scroll.x + sort * (workspace->fontsize * 0.5);
 	cursor->render_pos.y = bound.y + 30 + scroll.y + cursor->pos.y * (workspace->fontsize * 1.5);
+	if (Vector2Distance(cursor->render_pos, CursorStart) > 0.1) {
+		travelTarget(&CursorStart, cursor->render_pos, 30, GetFrameTime());
+	}
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < max_line && y < workspace->files[ctx.current_file]->glyphs.size(); y++) {
 		DrawTextEx(ctx.font, TextFormat(" %5i ", y + 1), {bound.x, bound.y + 30 + scroll.y + y * (float)(workspace->fontsize * 1.5)}, workspace->fontsize, 0, WHITE);
@@ -200,19 +223,19 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 	}
 	switch (workspace->cursor_style.style) {
 		case (box_cursor): {
-			DrawRectangleLines(cursor->render_pos.x, cursor->render_pos.y, workspace->fontsize * 0.5, workspace->fontsize, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			DrawRectangleLines(CursorStart.x, CursorStart.y, workspace->fontsize * 0.5, workspace->fontsize, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
 			break;
 		}
 		case (half_box_cursor): {
-			DrawRectangleLines(cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize * 0.5, workspace->fontsize * 0.5, workspace->fontsize * 0.5, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			DrawRectangleLines(CursorStart.x, CursorStart.y + workspace->fontsize * 0.5, workspace->fontsize * 0.5, workspace->fontsize * 0.5, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
 			break;
 		}
 		case (underscore_cursor): {
-			DrawRectangle(cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize, workspace->fontsize * 0.5, 2, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			DrawRectangle(CursorStart.x, CursorStart.y + workspace->fontsize, workspace->fontsize * 0.5, 2, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
 			break;
 		}
 		case (pipe_cursor): {
-			DrawLine(cursor->render_pos.x, cursor->render_pos.y, cursor->render_pos.x, cursor->render_pos.y + workspace->fontsize, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
+			DrawLine(CursorStart.x, CursorStart.y, CursorStart.x, CursorStart.y + workspace->fontsize, ColorAlpha(workspace->cursor_style.color, cursor->alpha));
 			break;
 		}
 		default:break;
@@ -242,7 +265,7 @@ void TerminalOut(t_workspace *workspace, const Rectangle bound) {
 
 void editorInput(t_workspace *workspace, const double delta_time) {
 	static double time = 0;
-	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound)) {
+	if (CheckCollisionPointRec(GetMousePosition(), ctx.texteditor_bound) && !ctx.term.open) {
 		t_file_header *current = workspace->files[ctx.current_file];
 		auto insert_place = current->glyphs[current->cursor.pos.y].begin();
 		std::advance(insert_place, current->cursor.pos.x);
@@ -420,8 +443,13 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 }
 
 void TerminalIn(t_workspace *workspace, const Rectangle bound) {
-	if (GuiTextBox(bound, ctx.term.in, 100, true)) {
+	static Vector2 start = {};
+	if (Vector2Distance(start, {start.x, bound.y}) > 0.1) {
+		travelTarget(&start, {start.x, bound.y}, 30, GetFrameTime());
+	}
+	if (GuiTextBox({bound.x, start.y, bound.width, bound.height}, ctx.term.in, 100, true)) {
 		ctx.term.open = false;
+		start = {0};
 		if (execCmd(ctx.term.in, ctx.term.out, 4096)) {
 			std::string str;
 			for (;;) {
@@ -443,21 +471,19 @@ void TerminalIn(t_workspace *workspace, const Rectangle bound) {
 	}
 }
 
-//void updateTextColor(t_file_header *file) {
-//	switch (extension_dictionnary[GetFileExtension(file->name)]) {
-//		case (c_ext):{
-//			stb_lexer lexer;
-//			for (int i = 0; i < file->glyphs.size(); i++) {
-//				stb_c_lexer_init(&lexer, file->glyphs[i], const char *input_stream_end, char *string_store, int store_length);
-//				stb_c_lexer_get_token(stb_lexer *lexer);
-//			}
-//			break;
-//		}
-//		case (cpp_ext):{break;}
-//		case (markdown_ext):{break;}
-//		default:break;
-//	}
-//}
+void updateTextColor(t_file_header *file) {
+	printf("%s\n",GetFileExtension(file->name));
+	switch (extension_dictionnary[GetFileExtension(file->name)]) {
+		case (c_ext):{
+			getTextColor(file, 0, file->codepoint_size);
+			break;
+		}
+		case (cpp_ext):{break;}
+		case (markdown_ext):{break;}
+		default:break;
+	}
+}
+
 void ContextBar(const Rectangle bound, t_workspace *workspace) {
 	auto cursor = workspace->files[ctx.current_file]->cursor;
 	bool saved =  workspace->files[ctx.current_file]->is_saved ? true : false;
@@ -527,32 +553,33 @@ int View(t_workspace *workspace){
 	static float sep1 = 400;
 	static bool show_add_file = false;
 	static bool show_del_file = false;
+	static double parse_time = 0;
 
 	float height, width;
 	int ret = 1;
-	//static double parse_time = 0;
 
 	double delta_time = GetFrameTime();
 
-	//parse_time += delta_time;
+	parse_time += delta_time;
 
 	height = GetScreenHeight();
 	width = GetScreenWidth();
 
+	if (parse_time >= 5) {
+		updateTextColor(workspace->files[ctx.current_file]);
+		parse_time = 0;
+	}
 	editorInput(workspace, delta_time);
-	//if (parse_time >= 5) {
-	//	updateTextColor(workspace->files[ctx.current_file]);
-	//}
 
 	ctx.terminal_bound = (Rectangle){0, 20, sep1, height - 20};
-	ctx.texteditor_bound = (Rectangle){sep1, 20, width - sep1, height - 40};
+	ctx.texteditor_bound = (Rectangle){sep1, 22, width - sep1, height - 40};
 
 	BeginDrawing();
 	ClearBackground(BLACK);
 		TerminalOut(workspace, ctx.terminal_bound);
 		TextEditor(ctx.texteditor_bound, workspace);
 		if (ctx.term.open == true) {
-			TerminalIn(workspace, {sep1, 20, width - sep1 - 30, 20});
+			TerminalIn(workspace, {sep1 + 10, 40, width - sep1 * 2 - 20, 30});
 		}
 		ret = ControlBar(workspace);
 		switch (ret) {

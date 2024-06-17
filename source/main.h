@@ -108,13 +108,13 @@ typedef struct s_context {
 #define INPUT_TIME 0.075
 
 static std::unordered_map<std::string, int> extension_dictionnary{
-	{"c", c_ext},
-	{"h", c_ext},
-	{"cpp", cpp_ext},
-	{"cc", cpp_ext},
-	{"hh", cpp_ext},
-	{"hpp", cpp_ext},
-	{"md", markdown_ext},
+	{".c", c_ext},
+	{".h", c_ext},
+	{".cpp", cpp_ext},
+	{".cc", cpp_ext},
+	{".hh", cpp_ext},
+	{".hpp", cpp_ext},
+	{".md", markdown_ext},
 };
 
 bool execCmd(char *cmd, std::queue<char> &out, int max_size);
@@ -124,3 +124,4 @@ t_file_header *loadFileRW(const char *filepath);
 void splitPath(std::string &from, std::vector<std::string> &paths);
 t_workspace loadWorkspace(const char *workspace_filepath);
 void renderSetting(t_workspace *workspace, bool *active);
+void getTextColor(t_file_header *file, const int start, const int end);
