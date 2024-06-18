@@ -103,6 +103,7 @@ typedef struct s_context {
 	t_terminal term;
 	Font font;
 	bool setting_open = false;
+	bool show_term_out = false;
 } t_context;
 
 #define INPUT_TIME 0.075

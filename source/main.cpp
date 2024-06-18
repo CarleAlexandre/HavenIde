@@ -202,8 +202,10 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 
 	cursor->render_pos.x = 60 + bound.x + scroll.x + sort * (workspace->fontsize * 0.5);
 	cursor->render_pos.y = bound.y + 30 + scroll.y + cursor->pos.y * (workspace->fontsize * 1.5);
-	if (Vector2Distance(cursor->render_pos, CursorStart) > 0.1) {
-		travelTarget(&CursorStart, cursor->render_pos, 30, GetFrameTime());
+	if (workspace->cursor_style.smooth) {
+		if (Vector2Distance(cursor->render_pos, CursorStart) > 0.1) {
+			travelTarget(&CursorStart, cursor->render_pos, 30, GetFrameTime());
+		}
 	}
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < max_line && y < workspace->files[ctx.current_file]->glyphs.size(); y++) {
@@ -282,6 +284,9 @@ void editorInput(t_workspace *workspace, const double delta_time) {
 			if (IsKeyPressed(KEY_P)) {
 				ctx.mode = normal;
 				ctx.term.open = true;
+			}
+			if (IsKeyPressed(KEY_T)) {
+				ctx.show_term_out = !ctx.show_term_out;
 			}
 		} else {
 			if (IsKeyDown(KEY_LEFT) || (IsKeyDown(KEY_H) && ctx.mode == normal && !ctx.term.open)) {
@@ -550,20 +555,18 @@ void del_file(t_workspace *workspace, bool *show) {
 }
 
 int View(t_workspace *workspace){
-	static float sep1 = 400;
 	static bool show_add_file = false;
 	static bool show_del_file = false;
 	static double parse_time = 0;
 
-	float height, width;
 	int ret = 1;
 
 	double delta_time = GetFrameTime();
 
 	parse_time += delta_time;
 
-	height = GetScreenHeight();
-	width = GetScreenWidth();
+	const float height = GetScreenHeight();
+	const float width = GetScreenWidth();
 
 	if (parse_time >= 5) {
 		updateTextColor(workspace->files[ctx.current_file]);
@@ -571,15 +574,27 @@ int View(t_workspace *workspace){
 	}
 	editorInput(workspace, delta_time);
 
-	ctx.terminal_bound = (Rectangle){0, 20, sep1, height - 20};
-	ctx.texteditor_bound = (Rectangle){sep1, 22, width - sep1, height - 40};
+	ctx.texteditor_bound = (Rectangle){ctx.terminal_bound.width, 22, width - ctx.terminal_bound.width, height - 40};
+	ctx.terminal_bound.height = height - 20;
 
 	BeginDrawing();
 	ClearBackground(BLACK);
-		TerminalOut(workspace, ctx.terminal_bound);
+		if (ctx.show_term_out) {
+			if (ctx.terminal_bound.width < 400) {
+				ctx.terminal_bound.width ++;
+			}
+		} else {
+			if (ctx.terminal_bound.width) {
+				ctx.terminal_bound.width--;
+			}
+		}
+		if (ctx.terminal_bound.width > 0) {
+			TerminalOut(workspace, ctx.terminal_bound);
+		}
+		
 		TextEditor(ctx.texteditor_bound, workspace);
 		if (ctx.term.open == true) {
-			TerminalIn(workspace, {sep1 + 10, 40, width - sep1 * 2 - 20, 30});
+			TerminalIn(workspace, {ctx.terminal_bound.width + 10, 40, width - ctx.terminal_bound.width * 2 - 20, 30});
 		}
 		ret = ControlBar(workspace);
 		switch (ret) {
@@ -641,6 +656,7 @@ int main(int ac, char **av) {
 	ctx.font = LoadFontEx(TextFormat("%s/assets/font/%s.ttf", appdir, workspace.font.c_str()), 32, NULL, INT16_MAX);
 	SetTextureFilter(ctx.font.texture, TEXTURE_FILTER_TRILINEAR);
 	GuiSetFont(ctx.font);
+	ctx.terminal_bound = (Rectangle){0, 20, 400, (float)GetScreenHeight() - 20};
 	SetTargetFPS(120);
 	bool shouldClose = false;
 	while (!shouldClose) {
