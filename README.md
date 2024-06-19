@@ -17,5 +17,3 @@ Drag Window
 parse from codepoints or glyphs but not from loaded utf8
 
 redo c parser/lexer
-
-add to workspace smooth cursor option

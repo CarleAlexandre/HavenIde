@@ -206,6 +206,8 @@ void TextEditor(const Rectangle bound, t_workspace *workspace) {
 		if (Vector2Distance(cursor->render_pos, CursorStart) > 0.1) {
 			travelTarget(&CursorStart, cursor->render_pos, 30, GetFrameTime());
 		}
+	} else {
+		CursorStart = cursor->render_pos;
 	}
 	GuiDrawRectangle((Rectangle){bound.x + 1, view.y + 1, 50, view.height - 1}, 1, WHITE, BLACK);
 	for (int y = start_line; y < max_line && y < workspace->files[ctx.current_file]->glyphs.size(); y++) {

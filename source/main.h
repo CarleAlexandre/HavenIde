@@ -59,6 +59,7 @@ typedef struct s_cursor {
 typedef struct s_cursor_style {
 	Color color;
 	style_cursor_e style;
+	bool smooth;
 } t_cursor_style;
 
 typedef struct s_file_header{

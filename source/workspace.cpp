@@ -1,7 +1,6 @@
 #include "main.h"
 #include <cassert>
 #include <stdlib.h>
-#include <iostream>
 
 typedef enum {
 	path_tok = 1,
@@ -11,6 +10,7 @@ typedef enum {
 	history_size_tok = 5,
 	cursor_style = 6,
 	cursor_color = 7,
+	cursor_smooth = 8,
 }workspace_token_e;
 
 t_workspace loadWorkspace(const char *workspace_filepath){
@@ -23,6 +23,7 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 		{"history_size", history_size_tok},
 		{"cursor_style", cursor_style},
 		{"cursor_color", cursor_color},
+		{"cursor_smooth", cursor_smooth},
 	};
 
 	char *data = LoadFileText(workspace_filepath);
@@ -65,6 +66,10 @@ t_workspace loadWorkspace(const char *workspace_filepath){
 			}
 			case (cursor_style): {
 				workspace.cursor_style.style = (style_cursor_e)atoi(token.value.c_str());
+				break;
+			}
+			case (cursor_smooth): {
+				workspace.cursor_style.smooth = token.value == "true" ? true : false;
 				break;
 			}
 			default:break;
