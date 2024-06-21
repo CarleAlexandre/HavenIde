@@ -8,8 +8,7 @@
 
 #define MAX_LENGTH 100 
 
-bool isDelimiter(char chr) 
-{ 
+bool isDelimiter(char chr) {
     return (chr == ' ' || chr == '+' || chr == '-'
             || chr == '*' || chr == '/' || chr == ','
             || chr == ';' || chr == '%' || chr == '>'
@@ -19,15 +18,13 @@ bool isDelimiter(char chr)
 			|| chr == '\n'); 
 } 
 
-bool isOperator(char chr) 
-{ 
+bool isOperator(char chr) {
     return (chr == '+' || chr == '-' || chr == '*'
             || chr == '/' || chr == '>' || chr == '<'
             || chr == '='); 
 } 
 
-bool isValidIdentifier(char* str) 
-{ 
+bool isValidIdentifier(char* str) {
     return (str[0] != '0' && str[0] != '1' && str[0] != '2'
             && str[0] != '3' && str[0] != '4'
             && str[0] != '5' && str[0] != '6'
@@ -65,8 +62,7 @@ bool isInteger(char* str) {
     return str[i] == '\0';
 } 
 
-char* getSubstring(char* str, int start, int end) 
-{ 
+char* getSubstring(char* str, int start, int end) {
     int length = strlen(str); 
     int subLength = end - start + 1; 
     char* subStr 
