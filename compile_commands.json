@@ -1,0 +1,128 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/c_lexer.o",
+      "source/c_lexer.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/c_lexer.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/c_lexer.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/color.o",
+      "source/color.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/color.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/color.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/glyph.o",
+      "source/glyph.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/glyph.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/glyph.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/main.o",
+      "source/main.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/main.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/process.o",
+      "source/process.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/process.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/process.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/setting.o",
+      "source/setting.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/setting.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/setting.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-g",
+      "-fsanitize=address",
+      "-I",
+      "include",
+      "-I",
+      "HavenLib/include",
+      "-c",
+      "-o",
+      "source/workspace.o",
+      "source/workspace.cpp"
+    ],
+    "directory": "/home/fatmeat/dev/HavenIde",
+    "file": "/home/fatmeat/dev/HavenIde/source/workspace.cpp",
+    "output": "/home/fatmeat/dev/HavenIde/source/workspace.o"
+  }
+]

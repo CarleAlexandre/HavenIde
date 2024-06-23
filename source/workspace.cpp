@@ -1,8 +1,11 @@
 #include "main.h"
 #include <cassert>
+#include <cstdio>
 #include <stdlib.h>
+#include <haven_parser.hpp>
 
 typedef enum {
+	null_tok = 0,
 	path_tok = 1,
 	theme_tok = 2,
 	font_tok = 3,
@@ -13,25 +16,26 @@ typedef enum {
 	cursor_smooth = 8,
 }workspace_token_e;
 
+static const std::vector<const char *> dictionnary = {
+	"paths",
+	"theme",
+	"font", 
+	"fontsize", 
+	"history_size",
+	"cursor_style",
+	"cursor_color",
+	"cursor_smooth",
+};
+
 t_workspace loadWorkspace(const char *workspace_filepath){
 	t_workspace workspace;
-	std::unordered_map<std::string, workspace_token_e> dictionnary = {
-		{"paths", path_tok},
-		{"theme", theme_tok},
-		{"font", font_tok},
-		{"fontsize", fontsize_tok},
-		{"history_size", history_size_tok},
-		{"cursor_style", cursor_style},
-		{"cursor_color", cursor_color},
-		{"cursor_smooth", cursor_smooth},
-	};
 
 	char *data = LoadFileText(workspace_filepath);
 
-	std::vector<t_token> tok = tokenizer(data, ",", 1, dictionnary);
+	std::vector<t_token> tok = tokenizer(data, ",", 1);
 
 	for (auto token: tok) {
-		switch (token.identifier) {
+		switch (cmpstr(token.key, dictionnary)) {
 			case (path_tok): {
 				splitPath(token.value, workspace.paths);
 				break;

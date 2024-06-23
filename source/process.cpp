@@ -1,35 +1,12 @@
-#include <windows.h>
-#include <stdio.h>
-#include <psapi.h>
 #include <queue>
-#include <iostream>
 #include <cassert>
 
-//int checkProcess(DWORD pid) {
-//	unsigned int ret_value = 0;
-//	HANDLE hprocess;
-
-//	printf("test");
-
-//	//run task and get process id
-
-//	hprocess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
-
-//	if (!hprocess) {
-//		return (-1);
-//	}
-
-//	//ReadProcessMemory(HANDLE hProcess, LPCVOID lpBaseAddress, LPVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesRead);
-
-//	//K32GetProcessMemoryInfo(HANDLE Process, PPROCESS_MEMORY_COUNTERS ppsmemCounters, DWORD cb);
-
-//	//GetProcessorSystemCycleTime(USHORT Group, PSYSTEM_PROCESSOR_CYCLE_TIME_INFORMATION Buffer, PDWORD ReturnedLength);
-
-
-//	return (ret_value);
-//}
-
 #ifdef _WIN32
+# include <windows.h>
+# include <psapi.h>
+# include <stdio.h>
+# include <iostream>
+
 void cleanupP(HANDLE *rdPipe, HANDLE *wrPipe, PROCESS_INFORMATION *pInfo) {
     if (rdPipe != NULL) {
         CloseHandle(rdPipe);
@@ -120,10 +97,46 @@ bool execCmd(char *cmd, std::queue<char> &out, int max_size) {
 	cleanupP(&rdPipe, &wrPipe, &pInfo);
 	return true;
 }
-#elif 
+# elif defined (__linux__)
 
-unsigned long execCmd(char *cmd, std::queue<char> *out, int max_size) {
-	return (-1);
+# include <sys/stat.h>
+# include <unistd.h>
+# include <sys/wait.h>
+# include <raylib.h>
+# include <string>
+
+int splitn(char *data, char *const arg[], int count, int sep) {
+	int k = 0;
+	std::string str;
+
+	for (int i = 0;data[i] && k < count; i++) {
+		if (data[i] == sep) {
+			str.copy(arg[k], str.size());
+			str.clear();
+			k++;
+		}
+		str += data[i];
+	}
+	return (0);
+}
+
+bool execCmd(char *cmd, std::queue<char> &out, int max_size) {
+	int pipes[2] = {};
+
+	assert(pipe(pipes));
+	int ret = -1;
+	int pid = fork();
+
+	if (pid == 0) {
+		char *const arg[10] = {};
+		splitn(cmd, arg, 10, ' ');
+		assert(arg[0]);
+		execv(arg[0], arg);
+	}
+	if (pid > 0) {
+		waitpid(pid, &ret, 0);
+	}
+	return (ret);
 }
 
 #endif

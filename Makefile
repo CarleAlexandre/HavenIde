@@ -3,9 +3,9 @@ RELEASE		=	HavenIde.exe
 
 BUILDDIR	=	bin/
 
-CC			=	gcc
+CC			=	g++
 
-CFLAGS		=	-g
+CFLAGS		=	-g --std=c++20
 
 OBJ			=	$(SRC:%.cpp=%.o)
 
@@ -13,7 +13,7 @@ DEPS		+=	$(wildcard include/*.h)
 
 SRC			+=	$(wildcard source/*.cpp)
 
-INCLUDE		=	-I include -I HavenLib/include
+INCLUDE		=	-I include -I ./HavenLib/include
 
 ifeq ($(OS), Windows_NT)
 INCLUDE		+=	-I C:/mingw64/include
@@ -21,8 +21,8 @@ LIBS		=	-lopengl32 -lgdi32 -lwinmm -lstdc++ -latomic
 RAYLIB		=	libs/win_libraylib.a
 endif
 ifeq ($(shell uname -s), Linux)
-CFLAGS		+=	-fsanitize=address
-LIBS		=	-lasan -lraylib -lGL -lm -lpthread -ldl -lrt -lX11 -lstdc++
+#CFLAGS		+=	-fsanitize=address -lasan
+LIBS		=	-lraylib -lGL -lm -lpthread -ldl -lrt -lX11 -lstdc++ -latomic
 endif
 ifeq ($(shell uname -s), Darwin)
 LIBS        =   -framework CoreVideo -framework IOKit -framework Coc
@@ -44,14 +44,13 @@ $(BUILDDIR)$(RELEASE): $(OBJ) $(DEPS)
 $(OBJ):		%.o :	%.cpp $(DEPS)
 		$(CC) $(CFLAGS) ${INCLUDE} -c $< -o $@
 
-all		:	debug release
+all		:	debug
 
 debug	:	$(BUILDDIR)$(NAME)
 
-release	:	$(BUILDDIR)$(RELEASE)
 
 clean		:
-		rm $(OBJ)
+		rm -f $(OBJ)
 
 fclean		:	clean
 		rm -f $(BUILDDIR)$(NAME)

@@ -1,11 +1,10 @@
+# include <iostream>
 # include <stddef.h>
 # include <stdint.h>
 # include <stdbool.h>
-# include <sstream>
 # include <vector>
 # include <raylib.h>
 # include <unordered_map>
-# include <linked_list.h>
 # include <list>
 # include <haven_parser.hpp>
 # include <mutex>
@@ -16,9 +15,9 @@ typedef struct s_monitor {
 }t_monitor;
 
 typedef enum {
-	close = -1,
-	start = 0,
-	stdview = 1,
+	step_close = -1,
+	step_start = 0,
+	step_stdview = 1,
 } step_e;
 
 typedef enum {
@@ -127,3 +126,4 @@ void splitPath(std::string &from, std::vector<std::string> &paths);
 t_workspace loadWorkspace(const char *workspace_filepath);
 void renderSetting(t_workspace *workspace, bool *active);
 void getTextColor(t_file_header *file, const int start, const int end);
+

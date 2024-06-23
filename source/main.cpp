@@ -653,9 +653,9 @@ int main(int ac, char **av) {
 		printf("refresh rate: %i, width: %i, height: %i, id: %i\n", displays[i].refresh_rate, displays[i].width, displays[i].height, i);
 	}
 	const char * appdir = GetApplicationDirectory();
-	workspace = loadWorkspace(TextFormat("%s/workspace/default.workspace", appdir));
-	GuiLoadStyle(TextFormat("%s/assets/styles/style_%s.rgs", appdir, workspace.theme.c_str()));
-	ctx.font = LoadFontEx(TextFormat("%s/assets/font/%s.ttf", appdir, workspace.font.c_str()), 32, NULL, INT16_MAX);
+	workspace = loadWorkspace(TextFormat("%sworkspace/default.workspace", appdir));
+	GuiLoadStyle(TextFormat("%sassets/styles/style_%s.rgs", appdir, workspace.theme.c_str()));
+	ctx.font = LoadFontEx(TextFormat("%sassets/font/%s.ttf", appdir, workspace.font.c_str()), 32, NULL, INT16_MAX);
 	SetTextureFilter(ctx.font.texture, TEXTURE_FILTER_TRILINEAR);
 	GuiSetFont(ctx.font);
 	ctx.terminal_bound = (Rectangle){0, 20, 400, (float)GetScreenHeight() - 20};
@@ -663,7 +663,7 @@ int main(int ac, char **av) {
 	bool shouldClose = false;
 	while (!shouldClose) {
 		switch (step) {
-			case (start): {
+			case (step_start): {
 				BeginDrawing();
 					ClearBackground(BLACK);
 					for (int i = 0; i < monitor_count; i++) {
@@ -677,7 +677,7 @@ int main(int ac, char **av) {
 							SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNDECORATED);
 							Vector2 pos = GetMonitorPosition(i);
 							SetWindowPosition(pos.x, pos.y);
-							step = stdview;
+							step = step_stdview;
 							free (displays);
 							displays = 0x00;
 							break;
@@ -686,11 +686,11 @@ int main(int ac, char **av) {
 				EndDrawing();
 				break;
 			}
-			case (stdview): {
+			case (step_stdview): {
 				step = View(&workspace);
 				break;
 			}
-			case (close): {
+			case (step_close): {
 				shouldClose = true;
 				break;
 			}

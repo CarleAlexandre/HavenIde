@@ -1,6 +1,8 @@
 #include "main.h"
+#include "raylib.h"
 #include <cassert>
 #include <string.h>
+#include <sstream>
 
 t_glyph *createGlyph(int data, Color fg) {
 	t_glyph *glyph;
@@ -64,6 +66,7 @@ void splitPath(std::string &from, std::vector<std::string> &paths) {
 	std::stringstream stream(from.c_str());
 
 	while (std::getline(stream, span)) {
+		std::cout << span.c_str() << "\n";
 		paths.push_back(span);
 	}
 }

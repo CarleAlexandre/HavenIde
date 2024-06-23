@@ -159,3 +159,41 @@ std::vector<t_lexical_analyzer> lexicalAnalyzer(char* input, const size_t len) {
 void c_lexer() {
 
 }
+  
+void getTextColor(t_file_header *file, const int start, const int end) {
+	char *data;
+	int len = end - start;
+	if (end > file->codepoint_size) {
+		len = file->codepoint_size - start;
+	}
+	std::vector<int> span;
+	for (int y = 0; y < file->glyphs.size(); y++) {
+		for (auto line : file->glyphs[y]) {
+			span.push_back(line->codepoint);
+		}
+	}
+	UnloadCodepoints(file->codepoints);
+
+	file->codepoint_size = span.size();
+	file->codepoints = (int *)MemAlloc(sizeof(int) * file->codepoint_size);
+	assert(file->codepoints);
+	for (int i = 0; i < span.size(); i++) {
+		file->codepoints[i] = span[i];
+	}
+	data = LoadUTF8(file->codepoints + start, len);
+	auto token = lexicalAnalyzer(data, strlen(data));
+	UnloadUTF8(data);
+	int i = 0;
+	int k = 0;
+	for (int y = 0; y < file->glyphs.size(); y++) {
+		for (auto at : file->glyphs[y]) {
+			at->fg = token[k].color;
+			if (i++ == token[k].end) {
+				k++;
+			}
+		}
+	}
+	token.clear();
+}
+
+
